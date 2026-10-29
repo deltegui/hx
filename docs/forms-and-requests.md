@@ -8,7 +8,7 @@ How to send something to a server: a form, a file, some JSON. Hix gives you thre
 | **`hx.Do`** | One request: method, headers, body, files, progress, timeout, cancel | yes |
 | **`hx.Action` / `hx.Resource`** | The state of a request as signals: pending, error, result | yes |
 
-The best pages use the first and the other two together: the form works without JavaScript, and when the WASM is running it sends the same fields without reloading the page. [`examples/forms`](../examples/forms) does exactly that.
+The best pages use the first and the other two together: the form works without JavaScript, and when the WASM is running it sends the same fields without reloading the page. [`examples/form-minimal`](../examples/form-minimal) is the smallest version of this (one field, about 200 lines), and [`examples/forms`](../examples/forms) is the complete one, with files, CSRF and a list.
 
 ## Plain forms: they work without WASM
 

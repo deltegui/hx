@@ -110,7 +110,7 @@ hx.EffectFunc(func() {
 | [API reference](docs/api.md) | Every exported function and method. |
 | [Troubleshooting and limits](docs/troubleshooting.md) | Common mistakes and what Hix does not do. |
 
-Recipes in the documentation are complete and runnable. [`examples/demo`](examples/demo) is a larger example with a tab per feature and a page of checks that run against the real DOM. [`examples/ssr`](examples/ssr) renders a page on a Go server and hydrates it in the browser. [`examples/forms`](examples/forms) is a form with file uploads that works with and without JavaScript.
+Recipes in the documentation are complete and runnable. [`examples/demo`](examples/demo) is a larger example with a tab per feature and a page of checks that run against the real DOM. [`examples/ssr`](examples/ssr) renders a page on a Go server and hydrates it in the browser. [`examples/forms`](examples/forms) is a form with file uploads that works with and without JavaScript, and [`examples/form-minimal`](examples/form-minimal) is the smallest version of it, to see what the mechanism needs.
 
 ## Sizes
 

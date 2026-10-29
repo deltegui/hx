@@ -20,28 +20,34 @@ func (ssr *StringRenderer) ScheduleRender()     {}
 func (ssr *StringRenderer) Mark(element *VNode) {}
 
 func (ssr *StringRenderer) Render(current *VNode) {
+	if current.status == changeDeleted {
+		return
+	}
+	if current.tag == noopIdNode {
+		ssr.writeChildren(current)
+		return
+	}
 	ssr.writeOpenTag(current)
 	if !voidElements[current.tag] {
 		ssr.writeBody(current)
+		ssr.writeCloseTag(current)
 	}
-	ssr.writeCloseTag(current)
 }
 
-func (ssr *StringRenderer) writeBody(current *VNode) {
-	if current.isDirty(flagChildren) {
-		for _, child := range current.children {
+func (ssr *StringRenderer) writeChildren(current *VNode) {
+	for _, child := range current.children {
+		if child != nil {
 			ssr.Render(child)
 		}
 	}
-	if current.text.status == changeModified {
-		ssr.buff.WriteString(html.EscapeString(current.text.nextValue))
-	}
+}
+
+func (ssr *StringRenderer) writeBody(current *VNode) {
+	ssr.buff.WriteString(html.EscapeString(current.text.nextValue))
+	ssr.writeChildren(current)
 }
 
 func (ssr *StringRenderer) writeCloseTag(current *VNode) {
-	if voidElements[current.tag] {
-		return
-	}
 	ssr.buff.WriteString("</")
 	ssr.buff.WriteString(current.tag)
 	ssr.buff.WriteString(">")
@@ -50,7 +56,6 @@ func (ssr *StringRenderer) writeCloseTag(current *VNode) {
 func (ssr *StringRenderer) writeOpenTag(current *VNode) {
 	ssr.buff.WriteRune('<')
 	ssr.buff.WriteString(current.tag)
-	ssr.buff.WriteRune(' ')
 	ssr.writeAttributes(current)
 
 	if voidElements[current.tag] {
@@ -60,33 +65,54 @@ func (ssr *StringRenderer) writeOpenTag(current *VNode) {
 	}
 }
 
+func (ssr *StringRenderer) writeAttribute(name, value string) {
+	ssr.buff.WriteRune(' ')
+	ssr.buff.WriteString(name)
+	ssr.buff.WriteString(`="`)
+	ssr.buff.WriteString(html.EscapeString(value))
+	ssr.buff.WriteString(`"`)
+}
+
 func (ssr *StringRenderer) writeAttributes(current *VNode) {
-	if current.isDirty(flagClasses) {
-		ssr.buff.WriteString(` class="`)
-		for cls := range current.classes {
-			ssr.buff.WriteString(html.EscapeString(cls))
-			ssr.buff.WriteRune(' ')
-		}
-		ssr.buff.WriteString(`"`)
+	if id := current.id.nextValue; id != "" {
+		ssr.writeAttribute("id", id)
 	}
-	if current.isDirty(flagStyles) {
-		ssr.buff.WriteString(` style="`)
-		for styleName, styleValue := range current.styles {
-			ssr.buff.WriteString(html.EscapeString(styleName))
-			ssr.buff.WriteRune(':')
-			ssr.buff.WriteString(html.EscapeString(styleValue.value))
-			ssr.buff.WriteRune(';')
+
+	classes := make([]string, 0, len(current.classes))
+	for _, cls := range sortedKeys(current.classes) {
+		if current.classes[cls] != changeDeleted {
+			classes = append(classes, cls)
 		}
-		ssr.buff.WriteString(`"`)
 	}
-	if current.isDirty(flagAttributes) {
-		for attrName, attrValue := range current.attributes {
-			ssr.buff.WriteString(" ")
-			ssr.buff.WriteString(attrName)
-			ssr.buff.WriteString(`="`)
-			ssr.buff.WriteString(html.EscapeString(attrValue.value))
-			ssr.buff.WriteString(`"`)
+	if len(classes) > 0 {
+		ssr.writeAttribute("class", strings.Join(classes, " "))
+	}
+
+	var styles strings.Builder
+	for _, styleName := range sortedKeys(current.styles) {
+		styleValue := current.styles[styleName]
+		if styleValue.status == changeDeleted {
+			continue
 		}
+		styles.WriteString(styleName)
+		styles.WriteRune(':')
+		styles.WriteString(styleValue.Value())
+		styles.WriteRune(';')
+	}
+	if styles.Len() > 0 {
+		ssr.writeAttribute("style", styles.String())
+	}
+
+	if value := current.value.nextValue; value != "" && current.tag != "TEXTAREA" {
+		ssr.writeAttribute("value", value)
+	}
+
+	for _, attrName := range sortedKeys(current.attributes) {
+		attrValue := current.attributes[attrName]
+		if attrValue.status == changeDeleted {
+			continue
+		}
+		ssr.writeAttribute(attrName, attrValue.Value())
 	}
 }
 

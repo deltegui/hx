@@ -1,6 +1,8 @@
 package hx
 
 import (
+	"syscall/js"
+
 	"honnef.co/go/js/dom/v2"
 )
 
@@ -59,6 +61,8 @@ type INode interface {
 
 	On(event Event, handler func(ctx EventContext)) INode
 	OnClick(handler func(ctx EventContext)) INode
+
+	Effect(fn func()) INode
 }
 
 type dirtyFlag int
@@ -73,9 +77,29 @@ const (
 	flagChildren
 )
 
+// eventListener is the handler of an event. The handler can be replaced at
+// any moment. The DOM listener (wrapper) is only registered once per DOM element.
+type eventListener struct {
+	handler  func(EventContext)
+	attached bool
+	wrapper  js.Func
+}
+
+// binding is an Effect owned by a node. It is disposed when the node leaves the
+// tree and created again if the node comes back.
+type binding struct {
+	run    func()
+	effect *Effect
+}
+
+const svgNamespace = "http://www.w3.org/2000/svg"
+
 type VNode struct {
 	domElement     dom.Element
 	haveDomElement bool
+	textNode       *dom.Text
+	bindings       []*binding
+	deactivated    bool
 
 	father *VNode
 	Owner  INode
@@ -84,15 +108,16 @@ type VNode struct {
 	renderer     Renderer
 	haveRenderer bool
 
-	tag   string
-	id    diffValue[string]
-	text  diffValue[string]
-	value diffValue[string]
+	tag       string
+	namespace string
+	id        diffValue[string]
+	text      diffValue[string]
+	value     diffValue[string]
 
 	styles         map[string]diffValue[string]
 	classes        map[string]changeStatus
 	attributes     map[string]diffValue[string]
-	eventListeners map[Event]singleValue[func(EventContext)]
+	eventListeners map[Event]*eventListener
 	children       []*VNode
 
 	dirtyFlags [flagNumber]bool
@@ -141,13 +166,74 @@ func newVNode(tag string) *VNode {
 		styles:         map[string]diffValue[string]{},
 		classes:        map[string]changeStatus{},
 		attributes:     map[string]diffValue[string]{},
-		eventListeners: map[Event]singleValue[func(EventContext)]{},
+		eventListeners: map[Event]*eventListener{},
 		children:       []*VNode{},
 
 		dirtyFlags: [flagNumber]bool{false},
 	}
 	vnode.Owner = vnode
 	return vnode
+}
+
+func newVNodeNS(tag, namespace string) *VNode {
+	vnode := newVNode(tag)
+	vnode.namespace = namespace
+	return vnode
+}
+
+// bind runs fn in an Effect that belongs to the node, so it stops when the node
+// is removed from the tree.
+func (element *VNode) bind(fn func()) {
+	b := &binding{run: fn}
+	b.effect = EffectFunc(fn)
+	element.bindings = append(element.bindings, b)
+}
+
+// Effect runs fn in an Effect that belongs to the node, like the Bind methods do:
+// it is disposed when the node is removed from the tree, and it runs again if
+// the node is added back. Prefer it to EffectFunc for effects that only make
+// sense while the node is alive.
+func (element *VNode) Effect(fn func()) INode {
+	element.bind(fn)
+	return element
+}
+
+// deactivate frees what a node that leaves the tree holds: its DOM listeners and
+// its bindings. It applies to the descendants too.
+func (element *VNode) deactivate() {
+	element.deactivated = true
+	element.releaseListeners()
+	for _, b := range element.bindings {
+		if b.effect != nil {
+			b.effect.Dispose()
+			b.effect = nil
+		}
+	}
+	for _, child := range element.children {
+		if child != nil {
+			child.deactivate()
+		}
+	}
+}
+
+// reactivate undoes deactivate for a node that is added to the tree again.
+// It does nothing for a node that is active.
+func (element *VNode) reactivate() {
+	if !element.deactivated {
+		return
+	}
+	element.deactivated = false
+	element.reviveListeners()
+	for _, b := range element.bindings {
+		if b.effect == nil || b.effect.disposed {
+			b.effect = EffectFunc(b.run)
+		}
+	}
+	for _, child := range element.children {
+		if child != nil {
+			child.reactivate()
+		}
+	}
 }
 
 func (element *VNode) Underlying() dom.Element {
@@ -161,6 +247,7 @@ func (element *VNode) AsVNode() *VNode {
 func (element *VNode) mark() {
 	if element.haveRenderer {
 		element.renderer.Mark(element)
+		element.renderer.ScheduleRender()
 	}
 }
 
@@ -198,12 +285,26 @@ func (element *VNode) Body(childs ...INode) INode {
 }
 
 func (element *VNode) BodyList(childs []INode) INode {
+	incoming := make(map[*VNode]struct{}, len(childs))
+	for _, child := range childs {
+		if child != nil {
+			incoming[asVNode(child)] = struct{}{}
+		}
+	}
+
+	// Nodes that are given again are re-added below, so they must not be duplicated.
+	kept := make([]*VNode, 0, len(element.children))
 	for _, child := range element.children {
 		if child == nil {
 			continue
 		}
+		if _, again := incoming[child]; again {
+			continue
+		}
 		child.status = changeDeleted
+		kept = append(kept, child)
 	}
+	element.children = kept
 
 	for _, child := range childs {
 		if child == nil {
@@ -224,19 +325,11 @@ func (element *VNode) BodyList(childs []INode) INode {
 
 func (element *VNode) On(event Event, handler func(ctx EventContext)) INode {
 	listener, ok := element.eventListeners[event]
-	if !ok {
-		element.eventListeners[event] = singleValue[func(EventContext)]{
-			value: func(ctx EventContext) {
-				Untrack(func() {
-					handler(ctx)
-				})
-				element.scheludeRender()
-			},
-			status: changeNew,
-		}
+	if ok {
+		listener.handler = handler
+		return element
 	}
-	listener.assign(handler, changeModified)
-
+	element.eventListeners[event] = &eventListener{handler: handler}
 	element.setDirty(flagEventListeners)
 	return element
 }
@@ -253,9 +346,8 @@ func (element *VNode) Text(t string) INode {
 }
 
 func (element *VNode) BindText(signal Gettable[string]) INode {
-	EffectFunc(func() {
+	element.bind(func() {
 		element.Text(signal.Get())
-		element.scheludeRender()
 	})
 	return element
 }
@@ -265,9 +357,13 @@ func (element *VNode) Class(classes ...string) INode {
 		if len(create) <= 0 {
 			continue
 		}
-		_, ok := element.classes[create]
+		status, ok := element.classes[create]
 		if !ok {
 			element.classes[create] = changeNew
+			element.setDirty(flagClasses)
+		} else if status == changeDeleted {
+			// Removed and added again before rendering: it is still in the DOM.
+			element.classes[create] = unchanged
 			element.setDirty(flagClasses)
 		}
 	}
@@ -279,11 +375,17 @@ func (element *VNode) RemoveClass(classes ...string) INode {
 		if len(remove) <= 0 {
 			continue
 		}
-		_, ok := element.classes[remove]
-		if ok {
-			element.classes[remove] = changeDeleted
-			element.setDirty(flagClasses)
+		status, ok := element.classes[remove]
+		if !ok || status == changeDeleted {
+			continue
 		}
+		if status == changeNew {
+			// It was never rendered, so there is nothing to remove from the DOM.
+			delete(element.classes, remove)
+		} else {
+			element.classes[remove] = changeDeleted
+		}
+		element.setDirty(flagClasses)
 	}
 	return element
 }
@@ -294,36 +396,19 @@ func (element *VNode) HaveClass(class string) bool {
 }
 
 func (element *VNode) Attribute(key, value string) INode {
-	if len(key) <= 0 || len(value) <= 0 {
+	if len(key) <= 0 {
 		return element
 	}
-
-	oldValue, ok := element.attributes[key]
-	if ok && oldValue.equals(value) {
-		return element
+	if setEntry(element.attributes, key, value) {
+		element.setDirty(flagAttributes)
 	}
-
-	var status changeStatus
-	if ok {
-		status = changeModified
-	} else {
-		status = changeNew
-	}
-	oldValue.assign(value, status)
-	element.attributes[key] = oldValue
-
-	element.setDirty(flagAttributes)
 	return element
 }
 
 func (element *VNode) RemoveAttribute(key string) INode {
-	current, ok := element.attributes[key]
-	if !ok {
-		return element
+	if removeEntry(element.attributes, key) {
+		element.setDirty(flagAttributes)
 	}
-	current.status = changeDeleted
-	element.attributes[key] = current
-	element.setDirty(flagAttributes)
 	return element
 }
 
@@ -344,33 +429,16 @@ func (element *VNode) HaveAttribute(key, value string) bool {
 }
 
 func (element *VNode) Style(key, value string) INode {
-	oldValue, ok := element.styles[key]
-	if ok && oldValue.equals(value) {
-		return element
+	if setEntry(element.styles, key, value) {
+		element.setDirty(flagStyles)
 	}
-
-	var status changeStatus
-	if ok {
-		status = changeModified
-	} else {
-		status = changeNew
-	}
-	oldValue.assign(value, status)
-	element.styles[key] = oldValue
-
-	element.setDirty(flagStyles)
-	element.scheludeRender()
 	return element
 }
 
 func (element *VNode) RemoveStyle(key string) INode {
-	current, ok := element.styles[key]
-	if !ok {
-		return element
+	if removeEntry(element.styles, key) {
+		element.setDirty(flagStyles)
 	}
-	current.status = changeDeleted
-	element.styles[key] = current
-	element.setDirty(flagStyles)
 	return element
 }
 
@@ -382,7 +450,7 @@ func (element *VNode) GetStyle(key string) string {
 	if value.status == changeDeleted {
 		return ""
 	}
-	return value.value
+	return value.Value()
 }
 
 func (element *VNode) HaveStyle(key, value string) bool {
@@ -391,9 +459,6 @@ func (element *VNode) HaveStyle(key, value string) bool {
 }
 
 func (element *VNode) Id(id string) INode {
-	if element.id.value == id {
-		return element
-	}
 	if element.id.assign(id, changeModified) {
 		element.mark()
 	}
@@ -402,8 +467,7 @@ func (element *VNode) Id(id string) INode {
 
 func (element *InputVNode) BindOnChange(signal Settable[string]) *InputVNode {
 	element.On(EventChange, func(ctx EventContext) {
-		input := ctx.Event.Target().(*dom.HTMLInputElement)
-		signal.Set(input.Value())
+		signal.Set(ctx.Event.Target().Underlying().Get("value").String())
 	})
 	return element
 }
@@ -420,10 +484,11 @@ type AVNode struct {
 }
 
 func newA(element *VNode) *AVNode {
-	element.Owner = element
-	return &AVNode{
+	a := &AVNode{
 		*element,
 	}
+	a.Owner = a
+	return a
 }
 
 func (e *AVNode) Href(v string) *AVNode {
@@ -450,17 +515,15 @@ func (element *InputVNode) Value(t string) INode {
 
 func (element *InputVNode) BindOnInput(signal Settable[string]) *InputVNode {
 	element.On(EventInput, func(ctx EventContext) {
-		input := ctx.Event.Target().(*dom.HTMLInputElement)
-		signal.Set(input.Value())
+		signal.Set(ctx.Event.Target().Underlying().Get("value").String())
 		element.scheludeRender()
 	})
 	return element
 }
 
 func (element *InputVNode) BindValue(signal Gettable[string]) *InputVNode {
-	EffectFunc(func() {
+	element.bind(func() {
 		element.Value(signal.Get())
-		element.scheludeRender()
 	})
 	return element
 }
@@ -495,11 +558,10 @@ func (element *TextAreaNode) Value(t string) INode {
 }
 
 func (element *TextAreaNode) BindValue(signal Gettable[string]) *TextAreaNode {
-	EffectFunc(func() {
+	element.bind(func() {
 		v := signal.Get()
 		element.Value(v)
 		element.Text(v)
-		element.scheludeRender()
 	})
 	return element
 }
@@ -642,8 +704,8 @@ func Audio() *VNode  { return newVNode("AUDIO") }
 func Source() *VNode { return newVNode("SOURCE") }
 
 func Canvas() *VNode { return newVNode("CANVAS") }
-func Svg() *VNode    { return newVNode("SVG") }
-func Path() *VNode   { return newVNode("PATH") }
+func Svg() *VNode    { return newVNodeNS("svg", svgNamespace) }
+func Path() *VNode   { return newVNodeNS("path", svgNamespace) }
 
 func Br() *VNode { return newVNode("BR") }
 func Hr() *VNode { return newVNode("HR") }

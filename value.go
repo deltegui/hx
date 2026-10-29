@@ -1,5 +1,7 @@
 package hx
 
+import "sort"
+
 type ValueWrapper[T any] struct {
 	inner T
 }
@@ -16,24 +18,6 @@ func (v ValueWrapper[T]) Get() T {
 
 func (v *ValueWrapper[T]) Set(t T) {
 	v.inner = t
-}
-
-type singleValue[T any] struct {
-	value  T
-	status changeStatus
-}
-
-func (sv *singleValue[T]) assign(val T, status changeStatus) bool {
-	sv.value = val
-	sv.status = status
-	return true
-}
-
-func (sv singleValue[T]) Value() T {
-	return sv.value
-}
-func (sv singleValue[T]) Status() changeStatus {
-	return sv.status
 }
 
 type diffValue[T comparable] struct {
@@ -59,7 +43,7 @@ func (sv *diffValue[T]) assign(val T, status changeStatus) bool {
 		sv.reset()
 		return false
 	}
-	if val == sv.nextValue {
+	if val == sv.nextValue && sv.status != changeDeleted {
 		return true
 	}
 	sv.nextValue = val
@@ -74,4 +58,48 @@ func (sv *diffValue[T]) equals(val T) bool {
 func (sv *diffValue[T]) tick() {
 	sv.value = sv.nextValue
 	sv.status = unchanged
+}
+
+// setEntry assigns value to key, keeping track of what changed since the last
+// render. It returns false if nothing changed.
+func setEntry(entries map[string]diffValue[string], key, value string) bool {
+	current, ok := entries[key]
+	switch {
+	case !ok:
+		entries[key] = diffValue[string]{nextValue: value, status: changeNew}
+	case current.status == changeNew:
+		current.nextValue = value
+		entries[key] = current
+	case current.status != changeDeleted && current.nextValue == value:
+		return false
+	default:
+		current.assign(value, changeModified)
+		entries[key] = current
+	}
+	return true
+}
+
+// removeEntry marks key as deleted. It returns false if there was nothing to remove.
+func removeEntry(entries map[string]diffValue[string], key string) bool {
+	current, ok := entries[key]
+	if !ok || current.status == changeDeleted {
+		return false
+	}
+	if current.status == changeNew {
+		// It was never rendered, so there is nothing to remove from the DOM.
+		delete(entries, key)
+		return true
+	}
+	current.status = changeDeleted
+	entries[key] = current
+	return true
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

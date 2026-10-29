@@ -56,6 +56,22 @@ func (s *sandbox) expectMissing(sub string) error {
 	return nil
 }
 
+// countMutations observes the childList mutations in the sandbox. The returned
+// function gives how many were delivered since the last call.
+func (s *sandbox) countMutations() func() int {
+	count := 0
+	observer := js.Global().Get("MutationObserver").New(js.FuncOf(func(_ js.Value, args []js.Value) any {
+		count += args[0].Length()
+		return nil
+	}))
+	observer.Call("observe", s.el.Underlying(), map[string]any{"childList": true, "subtree": true})
+	return func() int {
+		n := count
+		count = 0
+		return n
+	}
+}
+
 func eq[T comparable](what string, got, want T) error {
 	if got != want {
 		return fmt.Errorf("%s: got %v, want %v", what, got, want)
@@ -354,6 +370,110 @@ func allChecks() []check {
 			before := runs
 			s.Set(1)
 			return eq("runs after the child was discarded", runs, before)
+		}},
+
+		{"EachKeyed keeps the DOM elements of existing keys", func(sb *sandbox) error {
+			type row struct {
+				id   int
+				name string
+			}
+			items := hx.Signal([]row{{1, "a"}, {2, "b"}, {3, "c"}})
+			sb.root.Body(hx.Ul().Body(hx.EachKeyed(items,
+				func(r row) int { return r.id },
+				func(id int, item hx.Gettable[row], _ hx.Gettable[int]) hx.INode {
+					return hx.Li().BindText(hx.Computed(func() string { return item.Get().name }))
+				})))
+			settle()
+			for _, li := range sb.el.QuerySelectorAll("li") {
+				li.Underlying().Set("marker", li.TextContent())
+			}
+			items.Set([]row{{3, "c"}, {1, "a"}, {4, "d"}, {2, "b"}})
+			settle()
+			if err := sb.expect(`<ul><li>c</li><li>a</li><li>d</li><li>b</li></ul>`); err != nil {
+				return err
+			}
+			var kept []string
+			for _, li := range sb.el.QuerySelectorAll("li") {
+				marker := li.Underlying().Get("marker")
+				if marker.IsUndefined() {
+					kept = append(kept, "new")
+				} else {
+					kept = append(kept, marker.String())
+				}
+			}
+			return eq("elements", strings.Join(kept, ","), "c,a,new,b")
+		}},
+
+		{"EachKeyed: a reused row keeps its input value and focus", func(sb *sandbox) error {
+			type row struct{ id int }
+			items := hx.Signal([]row{{1}, {2}, {3}})
+			sb.root.Body(hx.Ul().Body(hx.EachKeyed(items,
+				func(r row) int { return r.id },
+				func(id int, _ hx.Gettable[row], _ hx.Gettable[int]) hx.INode {
+					return hx.Li().Body(hx.Input().Id(fmt.Sprint("in", id)))
+				})))
+			settle()
+			input := sb.el.QuerySelector("#in2").Underlying()
+			input.Set("value", "typed by the user")
+			input.Call("focus")
+			// add a row at the start and remove the first one
+			items.Set([]row{{4}, {2}, {3}})
+			settle()
+			same := sb.el.QuerySelector("#in2").Underlying()
+			return firstError(
+				eq("value", same.Get("value").String(), "typed by the user"),
+				eq("is the same element", same.Equal(input), true),
+				eq("has focus", js.Global().Get("document").Get("activeElement").Equal(input), true),
+			)
+		}},
+
+		{"EachKeyed: moving one row moves one element", func(sb *sandbox) error {
+			type row struct{ name string }
+			items := hx.Signal([]row{{"a"}, {"b"}, {"c"}, {"d"}, {"e"}})
+			sb.root.Body(hx.Ul().Body(hx.EachKeyed(items,
+				func(r row) string { return r.name },
+				func(k string, _ hx.Gettable[row], _ hx.Gettable[int]) hx.INode { return hx.Li().Text(k) })))
+			settle()
+
+			mutations := sb.countMutations()
+
+			items.Set([]row{{"e"}, {"a"}, {"b"}, {"c"}, {"d"}}) // the last goes first
+			settle()
+			if err := sb.expect(`<ul><li>e</li><li>a</li><li>b</li><li>c</li><li>d</li></ul>`); err != nil {
+				return err
+			}
+			records := mutations()
+			if records < 1 || records > 2 { // moving a node is a removal and an addition
+				return fmt.Errorf("%d DOM mutation records, want 1 or 2", records)
+			}
+
+			items.Set([]row{{"e"}, {"a"}, {"b"}, {"c"}, {"d"}}) // same order again
+			settle()
+			if n := mutations(); n != 0 {
+				return fmt.Errorf("%d DOM mutations when nothing moved", n)
+			}
+			return nil
+		}},
+
+		{"EachKeyed: new values update the rows without touching the DOM structure", func(sb *sandbox) error {
+			type row struct {
+				id   int
+				name string
+			}
+			items := hx.Signal([]row{{1, "a"}, {2, "b"}})
+			sb.root.Body(hx.Ul().Body(hx.EachKeyed(items,
+				func(r row) int { return r.id },
+				func(id int, item hx.Gettable[row], _ hx.Gettable[int]) hx.INode {
+					return hx.Li().BindText(hx.Computed(func() string { return item.Get().name }))
+				})))
+			settle()
+			mutations := sb.countMutations()
+			items.Set([]row{{1, "A"}, {2, "B"}})
+			settle()
+			if err := sb.expect(`<ul><li>A</li><li>B</li></ul>`); err != nil {
+				return err
+			}
+			return eq("childList mutations", mutations(), 0)
 		}},
 
 		{"IfFn and ShowFn build only the path they use", func(sb *sandbox) error {

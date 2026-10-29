@@ -34,9 +34,15 @@ So ten `Set` calls in a row can run your effects ten times, but they cost one DO
 
 ## Children
 
-`Body` marks the old children as removed and adds the new ones. Nodes that appear in both are kept (moved). There is no keyed diff: the children you give are the children you get, and new nodes are created for anything that is not the same node as before.
+`Body` marks the old children as removed and adds the new ones. Nodes that appear in both are kept. The children you give are the children you get: anything that is not the same node as before is created new. `EachKeyed` is what gives rows an identity, by passing the same nodes again for the same key.
 
-New elements are inserted in order. If you change the contents of a `Noop` that sits between other siblings, its new nodes are inserted at the right place, before the next sibling that is already in the DOM.
+After the nodes are created or removed, each node that had its children changed puts their DOM elements in order (`placeChildren`):
+
+1. It reads the order the elements currently have in the DOM.
+2. It finds the longest run of elements that are already in the right relative order. Those are not touched.
+3. The rest are inserted before the next element, walking from the end.
+
+So adding a row inserts one element, removing one removes one, and moving the last row to the top moves one element. Elements that stay keep their focus, scroll and selection. A `Noop` is transparent here: its children are placed inside the DOM element that holds the `Noop`, between the siblings around it.
 
 ## Text
 
@@ -50,7 +56,7 @@ Each node has at most one DOM listener per event type. `On` stores the handler a
 
 - The Go DOM library `honnef.co/go/js/dom` identifies the type of every value it returns with dozens of JavaScript calls. Hix avoids it when creating and removing nodes and the text node (`domraw.go`), which made rendering 5,000 rows about 3x faster and removing them about 20x faster. Elements you are likely to need typed (inputs, textareas, selects, links, buttons, forms, images...) still come back with their specific type.
 - Every property change is a single DOM call. Styles are written together in the `style` attribute.
-- `Each` rebuilds its rows when the list signal changes. To avoid it, bind each row to its own signal (see [Dynamic UI](dynamic-ui.md#updating-one-item-without-rebuilding-the-list)).
+- `Each` rebuilds its rows when the list signal changes. Use `EachKeyed` to keep them (see [Dynamic UI](dynamic-ui.md#keeping-the-rows-eachkeyed)), or bind each row to its own signal.
 
 ## StringRenderer
 

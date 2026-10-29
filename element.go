@@ -86,6 +86,7 @@ type eventListener struct {
 // tree and created again if the node comes back.
 type binding struct {
 	run    func()
+	stop   func() // called when the binding is deactivated, may be nil
 	effect *Effect
 }
 
@@ -186,7 +187,13 @@ func newVNodeNS(tag, namespace string) *VNode {
 // bind runs fn in an Effect that belongs to the node, so it stops when the node
 // is removed from the tree.
 func (element *VNode) bind(fn func()) {
-	b := &binding{run: fn}
+	element.bindWith(fn, nil)
+}
+
+// bindWith is bind with a function that runs when the node leaves the tree,
+// after the effect has been stopped.
+func (element *VNode) bindWith(fn, stop func()) {
+	b := &binding{run: fn, stop: stop}
 	b.effect = EffectFunc(fn)
 	element.bindings = append(element.bindings, b)
 }
@@ -209,6 +216,9 @@ func (element *VNode) deactivate() {
 		if b.effect != nil {
 			b.effect.Dispose()
 			b.effect = nil
+			if b.stop != nil {
+				b.stop()
+			}
 		}
 	}
 	for _, child := range element.children {

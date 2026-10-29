@@ -12,6 +12,7 @@ import (
 type DiffRenderer struct {
 	mountpoint  dom.Element
 	markNodes   map[*VNode]struct{}
+	toPlace     map[*VNode]struct{} // DOM owners whose children must be put in order
 	scheduled   bool
 	rafCallback js.Func
 }
@@ -20,6 +21,7 @@ func newRenderer(element dom.Element) *DiffRenderer {
 	r := &DiffRenderer{
 		mountpoint: element,
 		markNodes:  map[*VNode]struct{}{},
+		toPlace:    map[*VNode]struct{}{},
 		scheduled:  false,
 	}
 	r.createRaf()
@@ -50,7 +52,8 @@ func (r *DiffRenderer) ScheduleRender() {
 func (renderer *DiffRenderer) render() {
 	rootLCA := renderer.GetMarkedCommonAncestor()
 	if rootLCA != nil {
-		renderer.syncNodes(rootLCA, nil)
+		renderer.syncNodes(rootLCA)
+		renderer.placeAll()
 	}
 	for node := range renderer.markNodes {
 		node.render()
@@ -114,60 +117,102 @@ func domParentOf(element *VNode) *VNode {
 	return nil
 }
 
-// firstAttachedDom returns the first DOM node that node renders and that is
-// already in the DOM, or nil.
-func firstAttachedDom(node *VNode) dom.Node {
-	if node == nil || node.status == changeNew || node.status == changeDeleted {
-		return nil
-	}
-	if node.tag != noopIdNode {
-		if node.haveDomElement {
-			return node.domElement
-		}
-		return nil
-	}
+// collectTops returns the DOM elements that the live children of node put
+// directly inside the DOM element of its owner. Noop children are transparent.
+func collectTops(node *VNode, tops []dom.Element) []dom.Element {
 	for _, child := range node.children {
-		if first := firstAttachedDom(child); first != nil {
-			return first
+		if child == nil {
+			continue
+		}
+		if child.tag == noopIdNode {
+			tops = collectTops(child, tops)
+		} else if child.haveDomElement {
+			tops = append(tops, child.domElement)
 		}
 	}
-	return nil
+	return tops
 }
 
-// nextAttachedDom returns the DOM node that follows everything node renders,
-// inside the DOM parent of node. It returns nil if node is the last one.
-func nextAttachedDom(node *VNode) dom.Node {
-	for current := node; current.father != nil; current = current.father {
-		parent := current.father
-		found := false
-		for _, sibling := range parent.children {
-			if sibling == current {
-				found = true
-				continue
-			}
-			if !found {
-				continue
-			}
-			if first := firstAttachedDom(sibling); first != nil {
-				return first
+// longestIncreasing returns, for the sequence seq, which of its values belong
+// to a longest strictly increasing subsequence. The values must be smaller than size.
+func longestIncreasing(seq []int, size int) []bool {
+	keep := make([]bool, size)
+	if len(seq) == 0 {
+		return keep
+	}
+	tails := make([]int, 0, len(seq)) // index in seq of the smallest tail of each length
+	prev := make([]int, len(seq))
+	for i, v := range seq {
+		lo, hi := 0, len(tails)
+		for lo < hi {
+			mid := (lo + hi) / 2
+			if seq[tails[mid]] < v {
+				lo = mid + 1
+			} else {
+				hi = mid
 			}
 		}
-		if parent.haveDomElement {
-			return nil
+		if lo > 0 {
+			prev[i] = tails[lo-1]
+		} else {
+			prev[i] = -1
+		}
+		if lo == len(tails) {
+			tails = append(tails, i)
+		} else {
+			tails[lo] = i
 		}
 	}
-	return nil
+	for i := tails[len(tails)-1]; i >= 0; i = prev[i] {
+		keep[seq[i]] = true
+	}
+	return keep
 }
 
-func insertDom(parent *VNode, child dom.Node, anchor dom.Node) {
-	if parent == nil || !parent.haveDomElement {
+// positionKey is the property used to read back the order of the elements in the DOM.
+const positionKey = "__hxpos"
+
+// placeChildren puts the DOM elements of the children of owner in the order of
+// the tree while moving as few as possible. The elements that are already in
+// the right relative order (a longest increasing subsequence of their DOM
+// positions) are not touched, so they keep focus, scroll and selection; the
+// others are inserted before the next element.
+func placeChildren(owner *VNode) {
+	tops := collectTops(owner, nil)
+	if len(tops) == 0 {
 		return
 	}
-	if anchor == nil {
-		parent.domElement.AppendChild(child)
-		return
+	parent := owner.domElement.Underlying()
+
+	raws := make([]js.Value, len(tops))
+	for i, top := range tops {
+		raws[i] = top.Underlying()
+		raws[i].Set(positionKey, i)
 	}
-	parent.domElement.InsertBefore(child, anchor)
+
+	// Order in which the elements of the tree currently are in the DOM.
+	inDom := make([]int, 0, len(tops))
+	for child := parent.Get("firstChild"); !child.IsNull(); child = child.Get("nextSibling") {
+		if position := child.Get(positionKey); position.Type() == js.TypeNumber {
+			inDom = append(inDom, position.Int())
+		}
+	}
+	stay := longestIncreasing(inDom, len(tops))
+
+	next := js.Null()
+	for i := len(raws) - 1; i >= 0; i-- {
+		if !stay[i] {
+			parent.Call("insertBefore", raws[i], next)
+		}
+		next = raws[i]
+	}
+}
+
+func (renderer *DiffRenderer) placeAll() {
+	for owner := range renderer.toPlace {
+		placeChildren(owner)
+		delete(renderer.toPlace, owner)
+	}
 }
 
 // removeDom removes from the DOM everything that node renders.
@@ -197,33 +242,34 @@ func (renderer *DiffRenderer) detach(element *VNode) {
 	element.father = nil
 }
 
-func (renderer *DiffRenderer) syncChildren(element *VNode, anchor dom.Node) {
+func (renderer *DiffRenderer) syncChildren(element *VNode) {
 	childs := make([]*VNode, 0, len(element.children))
 	for _, child := range element.children {
 		if child == nil {
 			continue
 		}
-		if renderer.syncNodes(child, anchor) {
+		if renderer.syncNodes(child) {
 			childs = append(childs, child)
 		}
 	}
 	element.children = childs
 }
 
-// syncNoopNode syncs a Noop. A Noop renders nothing by itself, its children are
-// inserted in its DOM parent before anchor (or at the end if anchor is nil).
-func (renderer *DiffRenderer) syncNoopNode(element *VNode, anchor dom.Node) bool {
+// syncNoopNode syncs a Noop. A Noop renders nothing by itself, so when its
+// children change the DOM owner that holds them has to put them in order.
+func (renderer *DiffRenderer) syncNoopNode(element *VNode) bool {
 	if element.status == changeDeleted {
 		renderer.detach(element)
 		return false
 	}
-	if element.status == unchanged {
-		anchor = nextAttachedDom(element)
+	element.status = unchanged
+	renderer.syncChildren(element)
+	if element.isDirty(flagChildren) {
+		element.dirtyFlags[flagChildren] = false // a Noop is never rendered by itself
+		if owner := domParentOf(element); owner != nil && len(element.children) > 0 {
+			renderer.toPlace[owner] = struct{}{}
+		}
 	}
-	if element.status == changeNew {
-		element.status = unchanged
-	}
-	renderer.syncChildren(element, anchor)
 	return true
 }
 
@@ -235,9 +281,12 @@ func (renderer *DiffRenderer) createDomElement(element *VNode) {
 	element.haveDomElement = true
 }
 
-func (renderer *DiffRenderer) syncNodes(element *VNode, anchor dom.Node) bool {
+// syncNodes creates the DOM elements of new nodes, removes the ones of deleted
+// nodes, and records which DOM owners have to put their children in order. It
+// returns false if the node was deleted.
+func (renderer *DiffRenderer) syncNodes(element *VNode) bool {
 	if element.tag == noopIdNode {
-		return renderer.syncNoopNode(element, anchor)
+		return renderer.syncNoopNode(element)
 	}
 
 	if element.status == changeDeleted {
@@ -248,13 +297,12 @@ func (renderer *DiffRenderer) syncNodes(element *VNode, anchor dom.Node) bool {
 		renderer.createDomElement(element)
 		element.status = unchanged
 		element.reactivate()
-		if element.haveDomElement {
-			insertDom(domParentOf(element), element.domElement, anchor)
-		}
 	}
 
-	renderer.syncChildren(element, nil)
-
+	renderer.syncChildren(element)
+	if element.isDirty(flagChildren) && element.haveDomElement && len(element.children) > 0 {
+		renderer.toPlace[element] = struct{}{}
+	}
 	return true
 }
 

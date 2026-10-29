@@ -75,6 +75,64 @@ func todoList() hx.INode {
 
 `dom` is `honnef.co/go/js/dom/v2`.
 
+## Keyed list: rows that keep their state
+
+Every row has an input for notes. Moving, adding or removing rows does not lose what you typed, because each row is built once per ID.
+
+```go
+type Task struct {
+	ID    int
+	Title string
+}
+
+func tasks() hx.INode {
+	items := hx.Signal([]Task{{1, "write docs"}, {2, "ship it"}, {3, "relax"}})
+	nextID := 3
+
+	move := func(id, by int) {
+		items.Update(func(l []Task) []Task {
+			l = slices.Clone(l)
+			i := slices.IndexFunc(l, func(t Task) bool { return t.ID == id })
+			j := i + by
+			if i < 0 || j < 0 || j >= len(l) {
+				return l
+			}
+			l[i], l[j] = l[j], l[i]
+			return l
+		})
+	}
+
+	list := hx.Ul().Body(hx.EachKeyed(items,
+		func(t Task) int { return t.ID },
+		func(id int, task hx.Gettable[Task], index hx.Gettable[int]) hx.INode {
+			title := hx.Computed(func() string {
+				return fmt.Sprintf("%d. %s ", index.Get()+1, task.Get().Title)
+			})
+			return hx.Li().Body(
+				hx.Span().BindText(title),
+				hx.Input().Placeholder("notes"),
+				hx.Button().Text("up").OnClick(func(hx.EventContext) { move(id, -1) }),
+				hx.Button().Text("down").OnClick(func(hx.EventContext) { move(id, +1) }),
+				hx.Button().Text("x").OnClick(func(hx.EventContext) {
+					items.Update(func(l []Task) []Task {
+						return slices.DeleteFunc(slices.Clone(l), func(t Task) bool { return t.ID == id })
+					})
+				}),
+			)
+		}))
+
+	return hx.Div().Body(
+		list,
+		hx.Button().Text("Add task").OnClick(func(hx.EventContext) {
+			nextID++
+			items.Update(func(l []Task) []Task {
+				return append(slices.Clone(l), Task{nextID, fmt.Sprintf("task %d", nextID)})
+			})
+		}),
+	)
+}
+```
+
 ## Live search filter
 
 A text box that filters a list. The filtered list is a `Computed`-like value kept in a signal updated by an effect.
@@ -255,7 +313,7 @@ func profile() hx.INode {
 ```go
 func main() {
 	hx.CreateRoot(func(dispose func()) struct{} {
-		hx.NewFromId("app").Body(todoList(), timer(), tabs())
+		hx.NewFromId("app").Body(todoList(), tasks(), timer(), tabs())
 		return struct{}{}
 	})
 	select {}

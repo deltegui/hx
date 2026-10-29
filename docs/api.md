@@ -116,6 +116,7 @@ Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSub
 | `Each[T](src Gettable[[]T], render func(i int, v T) INode) INode` | One node per item. |
 | `EachMap[K comparable, T](src Gettable[map[K]T], render func(k K, v T) INode) INode` | One node per entry, **unspecified order**. |
 | `EachMapSorted[K cmp.Ordered, T](src, render) INode` | Ordered by key. |
+| `EachKeyed[T any, K comparable](src Gettable[[]T], key func(T) K, render func(key K, item Gettable[T], index Gettable[int]) INode) INode` | Rows are built once per key and reused: they keep their DOM element and state. Use it directly as a child, not inside an effect. |
 
 ## Renderers
 

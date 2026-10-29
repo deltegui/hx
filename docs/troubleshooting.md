@@ -28,11 +28,19 @@ items.Update(func(l []string) []string { return append(slices.Clone(l), "x") })
 
 ## My list rebuilds on every change
 
-That is how `Each` works: when the signal changes, the effect that contains it runs again and sets a new body. For big lists or heavy rows, give each row its own signal. See [Dynamic UI](dynamic-ui.md#updating-one-item-without-rebuilding-the-list).
+That is how `Each` works: when the signal changes, the effect that contains it runs again and sets a new body. Use `EachKeyed` so rows are built once per key and reused. See [Dynamic UI](dynamic-ui.md#keeping-the-rows-eachkeyed).
 
-## A row loses focus or scroll when the list changes
+## A row loses focus, typed text or scroll when the list changes
 
-The old row is removed and a new one is created. Keep the same node and pass it to `Body` again (nodes that are already children are moved), or bind each row to its own signal instead of rebuilding the list.
+With `Each` the old row is removed and a new one is created. Use `EachKeyed`.
+
+## `EachKeyed` rows show old values
+
+The row is built once, so anything you read with `item.Get()` while building is a snapshot. Read it inside a binding (`BindText(hx.Computed(...))`) or an effect, which run again when the item changes.
+
+## "EachKeyed: duplicated key" in the console
+
+Two items returned the same key. Keys have to be unique (an ID, not an index or a name that can repeat). The repeated item is still rendered, but as a row that is rebuilt every time.
 
 ## An effect keeps running after its node is gone
 
@@ -57,7 +65,7 @@ Use `node.Underlying()` after the node has been rendered. Before that it is `nil
 ## Limits worth knowing
 
 - **WASM only.** The package imports `syscall/js`, so it only builds with `GOOS=js GOARCH=wasm`. There is no server-side rendering outside the browser.
-- **No keyed list diffing.** Lists are rebuilt (see above).
+- **`Each` rebuilds its rows.** Use `EachKeyed` when rows have state or the list is long.
 - **No batching of signal writes.** Each `Set` runs its effects right away. DOM updates are still batched once per frame.
 - **`Computed` needs a comparable type.** For slices, maps or structs holding them, use a signal and update it from an effect.
 - **No router, no global store, no component lifecycle hooks.** Components are plain functions, and `node.Effect` + `OnCleanup` cover setup and teardown.

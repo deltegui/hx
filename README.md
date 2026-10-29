@@ -65,6 +65,13 @@ GOOS=js GOARCH=wasm go build -o main.wasm .
 // everything chains, in any order
 hx.Input().Placeholder("Your name").Class("big").BindValue(name).BindOnInput(name)
 
+// a list that keeps its rows (and their inputs, focus, scroll) per key
+hx.Ul().Body(hx.EachKeyed(todos,
+	func(t Todo) int { return t.ID },
+	func(id int, todo hx.Gettable[Todo], index hx.Gettable[int]) hx.INode {
+		return hx.Li().BindText(hx.Computed(func() string { return todo.Get().Title }))
+	}))
+
 // lists and conditionals inside a node effect; the effect belongs to the node
 list := hx.Ul()
 list.Effect(func() {
@@ -91,7 +98,7 @@ hx.EffectFunc(func() {
 | [Getting started](docs/getting-started.md) | From an empty folder to a running page. Go and TinyGo builds. |
 | [Reactivity](docs/reactivity.md) | Signals, computed values, effects, roots, cleanup and who stops what. |
 | [Building the UI](docs/building-the-ui.md) | Elements, content, attributes, classes, styles, events, forms, SVG. |
-| [Dynamic UI](docs/dynamic-ui.md) | Bindings, conditionals, lists, reusing nodes. |
+| [Dynamic UI](docs/dynamic-ui.md) | Bindings, conditionals, lists (`Each`, `EachKeyed`), reusing nodes. |
 | [Recipes](docs/recipes.md) | Counter, todo list, search, tabs, timer, validation, components. |
 | [How it works](docs/how-it-works.md) | Dependency tracking, the renderer, the string renderer. |
 | [API reference](docs/api.md) | Every exported function and method. |
@@ -117,7 +124,7 @@ These numbers were measured on an earlier version of the library.
 
 ## Status
 
-Hix is young and used in a side project. The API is small on purpose. The main limits are: it only runs as WASM, lists are rebuilt instead of diffed by key, and signal writes are not batched. See [Troubleshooting and limits](docs/troubleshooting.md).
+Hix is young and used in a side project. The API is small on purpose. The main limits are: it only runs as WASM, and signal writes are not batched. See [Troubleshooting and limits](docs/troubleshooting.md).
 
 Run the tests with:
 

@@ -86,15 +86,59 @@ box.Effect(func() {
 hx.Each(items, func(index int, item T) hx.INode)
 hx.EachMap(m, func(key K, value V) hx.INode)         // order is NOT defined
 hx.EachMapSorted(m, func(key K, value V) hx.INode)   // ordered by key (K must be ordered)
+hx.EachKeyed(items, key, render)                     // rows are kept per key, see below
 ```
 
-They take a signal (or anything with `Get()`) holding a slice or map and return a fragment (`Noop`) with one node per item. Call them inside an effect, as shown above.
+They take a signal (or anything with `Get()`) holding a slice or map and return a fragment (`Noop`) with one node per item. Call them inside an effect, as shown above. For rows that keep their state see `EachKeyed` below.
 
 Be careful with `EachMap`: Go maps have no order, so the rows can change position between renders. Use `EachMapSorted` if you show the data to people.
 
-### Updating one item without rebuilding the list
+### Keeping the rows: `EachKeyed`
 
-Rebuilding the whole list is simple and fast enough for hundreds of items (5,000 render in about 200 ms). When rows are heavy or you do not want the list rebuilt on every change, give each row its own signal and bind to it. Only the row's text updates:
+`Each` rebuilds every row when the list changes. That is simple and fast enough for hundreds of items, but a row loses its state: text typed in an input, focus, scroll position, a running animation.
+
+`EachKeyed` builds a row **once per key** and reuses it:
+
+```go
+type Todo struct {
+	ID    int
+	Title string
+}
+
+todos := hx.Signal([]Todo{{1, "write docs"}, {2, "ship it"}})
+
+list := hx.Ul().Body(hx.EachKeyed(todos,
+	func(t Todo) int { return t.ID }, // the identity of an item
+	func(id int, todo hx.Gettable[Todo], index hx.Gettable[int]) hx.INode {
+		return hx.Li().Body(
+			hx.Span().BindText(hx.Computed(func() string {
+				return fmt.Sprintf("%d. %s ", index.Get()+1, todo.Get().Title)
+			})),
+			hx.Input().Placeholder("notes"),
+		)
+	}))
+```
+
+What happens when `todos` changes:
+
+- A key that is new gets a new row (`render` runs).
+- A key that was already there keeps its row and its DOM element. Its `todo` and `index` change, so whatever is bound to them updates.
+- A key that is gone loses its row. Everything created inside `render` (bindings, effects, computed values) is stopped.
+- Rows that changed position are moved with the fewest DOM moves. The ones that did not move are not touched, so they keep focus.
+
+Rules:
+
+- **Use it directly as a child**, as in the example. It follows the signal by itself, so it does **not** go inside an effect like `Each` does.
+- **`todo` and `index` are values that change.** Read them with `Get()` inside a binding or an effect. If you read `todo.Get()` once while building the row, you get the value it had at that moment.
+- **Keys must be unique.** With a repeated key, Hix logs a warning and renders the later item as a row that is rebuilt every time.
+- `render` may return `nil` to skip a row.
+- Effects and computed values created inside `render` are owned by the row. You do not have to dispose them.
+
+Use `Each` when the rows are cheap and stateless. Use `EachKeyed` when rows have state, when the list is long and changes a little, or when rows are reordered.
+
+### Updating one item without rebuilding the list (with `Each`)
+
+If you prefer `Each`, you can still avoid rebuilding on every change: give each row its own signal and bind to it. Only the row's text updates:
 
 ```go
 type Row struct{ Label string; Count *hx.SignalT[int] }

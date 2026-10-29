@@ -17,6 +17,10 @@ In about 1.9K lines of code, it can:
 
 * Work seamlessly with **TinyGo**, reducing bundle sizes dramatically.
 
+* **Send forms, files and JSON** with `hx.Do`, `hx.Action` and `hx.Resource`: progress, cancel, timeout, state in signals. The same form also works without WASM.
+
+* **Render on the server and hydrate in the browser.** A Go backend writes plain HTML from the same UI code, and the WASM adopts it without touching the DOM.
+
 Hix only depends on *honnef.co/go/js/dom/v2*.
 
 Hix doesn’t try to be a full-fledged framework — it’s just a library for writing reactive web interfaces in Go.
@@ -98,13 +102,15 @@ hx.EffectFunc(func() {
 | [Getting started](docs/getting-started.md) | From an empty folder to a running page. Go and TinyGo builds. |
 | [Reactivity](docs/reactivity.md) | Signals, computed values, effects, roots, cleanup and who stops what. |
 | [Building the UI](docs/building-the-ui.md) | Elements, content, attributes, classes, styles, events, forms, SVG. |
+| [Forms and requests](docs/forms-and-requests.md) | Forms with or without WASM, files, JSON, `Do`, `Action`, `Resource`, CSRF. |
+| [Server rendering](docs/server-rendering.md) | `RenderToString`, `Hydrate`, shared state, `OnMount`, what to watch for. |
 | [Dynamic UI](docs/dynamic-ui.md) | Bindings, conditionals, lists (`Each`, `EachKeyed`), reusing nodes. |
 | [Recipes](docs/recipes.md) | Counter, todo list, search, tabs, timer, validation, components. |
 | [How it works](docs/how-it-works.md) | Dependency tracking, the renderer, the string renderer. |
 | [API reference](docs/api.md) | Every exported function and method. |
 | [Troubleshooting and limits](docs/troubleshooting.md) | Common mistakes and what Hix does not do. |
 
-Recipes in the documentation are complete and runnable. [`examples/demo`](examples/demo) is a larger example with a tab per feature and a page of checks that run against the real DOM.
+Recipes in the documentation are complete and runnable. [`examples/demo`](examples/demo) is a larger example with a tab per feature and a page of checks that run against the real DOM. [`examples/ssr`](examples/ssr) renders a page on a Go server and hydrates it in the browser. [`examples/forms`](examples/forms) is a form with file uploads that works with and without JavaScript.
 
 ## Sizes
 
@@ -124,15 +130,16 @@ These numbers were measured on an earlier version of the library.
 
 ## Status
 
-Hix is young and used in a side project. The API is small on purpose. The main limits are: it only runs as WASM, and signal writes are not batched. See [Troubleshooting and limits](docs/troubleshooting.md).
+Hix is young and used in a side project. The API is small on purpose. The main limits are: the DOM half only runs as WASM (the core also builds on a server), and signal writes are not batched. See [Troubleshooting and limits](docs/troubleshooting.md).
 
 Run the tests with:
 
 ```sh
-GOOS=js GOARCH=wasm go test -exec "$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./...
+go test ./...                                                              # the core, natively
+GOOS=js GOARCH=wasm go test -exec "$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./...   # also in WASM (needs Node.js)
 ```
 
-(they need Node.js and cover signals and the string renderer; the DOM code is checked in a real browser by [`examples/demo`](examples/demo)).
+The DOM code is checked in a real browser: [`examples/demo`](examples/demo) has 30 checks, [`examples/ssr`](examples/ssr) (`make check`) checks the hydration, and [`examples/forms`](examples/forms) (`make check`) checks the forms with JavaScript off and on.
 
 ## Why Hix?
 

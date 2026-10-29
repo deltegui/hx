@@ -45,13 +45,13 @@ func newKeyedHarness(items ...keyedItem) *keyedHarness {
 
 func TestEachKeyedRendersAndUpdatesRows(t *testing.T) {
 	h := newKeyedHarness(keyedItem{1, "a"}, keyedItem{2, "b"})
-	if got := render(h.ul); got != `<UL><LI>0:a</LI><LI>1:b</LI></UL>` {
+	if got := render(h.ul); got != `<ul><li>0:a</li><li>1:b</li></ul>` {
 		t.Fatalf("got %s", got)
 	}
 
 	// reorder, change a value and add a row
 	h.items.Set([]keyedItem{{2, "B"}, {3, "c"}, {1, "a"}})
-	if got := render(h.ul); got != `<UL><LI>0:B</LI><LI>1:c</LI><LI>2:a</LI></UL>` {
+	if got := render(h.ul); got != `<ul><li>0:B</li><li>1:c</li><li>2:a</li></ul>` {
 		t.Fatalf("got %s", got)
 	}
 }
@@ -85,7 +85,7 @@ func TestEachKeyedStopsTheEffectsOfRemovedRows(t *testing.T) {
 	if h.effects[2] != 3 {
 		t.Fatalf("the effect of a kept row must keep running: %v", h.effects)
 	}
-	if got := render(h.ul); got != `<UL><LI>0:b</LI></UL>` {
+	if got := render(h.ul); got != `<ul><li>0:b</li></ul>` {
 		t.Fatalf("got %s", got)
 	}
 }
@@ -113,14 +113,14 @@ func TestEachKeyedStopsWhenTheListLeavesTheTree(t *testing.T) {
 	}
 
 	h.ul.reactivate()
-	if got := render(h.ul); got != `<UL><LI>0:a</LI><LI>1:b</LI></UL>` {
+	if got := render(h.ul); got != `<ul><li>0:a</li><li>1:b</li></ul>` {
 		t.Fatalf("got %s", got)
 	}
 }
 
 func TestEachKeyedDuplicatedKeysAreStillRendered(t *testing.T) {
 	h := newKeyedHarness(keyedItem{1, "a"}, keyedItem{1, "again"})
-	if got := render(h.ul); got != `<UL><LI>0:a</LI><LI>1:again</LI></UL>` {
+	if got := render(h.ul); got != `<ul><li>0:a</li><li>1:again</li></ul>` {
 		t.Fatalf("got %s", got)
 	}
 }
@@ -133,7 +133,7 @@ func TestEachKeyedSkipsNilRows(t *testing.T) {
 		}
 		return Li().Text(fmt.Sprint(k))
 	})
-	if got := render(Ul().Body(list)); got != `<UL><LI>1</LI><LI>3</LI></UL>` {
+	if got := render(Ul().Body(list)); got != `<ul><li>1</li><li>3</li></ul>` {
 		t.Fatalf("got %s", got)
 	}
 }

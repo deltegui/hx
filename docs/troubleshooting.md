@@ -62,9 +62,33 @@ A `Noop` has no element of its own, so there is nothing to style. Put a real ele
 
 Use `node.Underlying()` after the node has been rendered. Before that it is `nil`.
 
+## The page freezes when I make a request
+
+You waited for the answer inside an event handler. The answer can only be handled after the handler returns, so waiting there blocks it forever. Run the request in a goroutine (`go func() { ... }()`) or inside an `hx.Action`, which does it for you. See [Forms and requests](forms-and-requests.md).
+
+## `hx: requests can only be made in the browser`
+
+`hx.Do` (and anything that uses it) was called on a server. Requests only happen in the browser. Code shared with the server can build the `Action`, but it must not call `Run` while rendering. Event handlers never run on a server, so this normally means a request was started during the build.
+
+## `hx: network error`
+
+The browser could not reach the server, or it blocked the answer. The usual cause is CORS: if the API is on another origin the server has to allow it. Open the network tab of the browser to see the real reason.
+
+## An `Action` shows the old result while it reloads
+
+That is on purpose: the last result is kept until there is a new one, so the UI does not blink. Use `Pending()` to show that it is loading, or `Reset()` to forget the result.
+
+## The upload does not report progress
+
+Upload progress is reported while the request body is sent. With a small file it can go from 0 to 100% in one step. Download progress needs the server to send `Content-Length`.
+
+## The server does not see my file
+
+A form with files needs `enctype="multipart/form-data"`. `hx.FormOf` sends it that way by itself; a plain form needs the attribute. An empty file input sends an empty part with no filename, so skip parts whose filename is empty.
+
 ## Limits worth knowing
 
-- **WASM only.** The package imports `syscall/js`, so it only builds with `GOOS=js GOARCH=wasm`. There is no server-side rendering outside the browser.
+- **The DOM half is WASM only.** `New`, `NewFromId`, `Hydrate`, `Underlying()` and the DOM renderer need `GOOS=js GOARCH=wasm`. The core (signals, nodes, `RenderToString`) builds everywhere, so a server can render the UI. See [Server rendering](server-rendering.md).
 - **`Each` rebuilds its rows.** Use `EachKeyed` when rows have state or the list is long.
 - **No batching of signal writes.** Each `Set` runs its effects right away. DOM updates are still batched once per frame.
 - **`Computed` needs a comparable type.** For slices, maps or structs holding them, use a signal and update it from an effect.

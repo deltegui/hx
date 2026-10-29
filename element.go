@@ -3,9 +3,6 @@ package hx
 import (
 	"fmt"
 	"strings"
-	"syscall/js"
-
-	"honnef.co/go/js/dom/v2"
 )
 
 // Renderer decides when and how the changes of the nodes reach the output.
@@ -18,7 +15,9 @@ type Renderer interface {
 // EventContext is what an event handler receives: the node that has the listener and the browser event.
 type EventContext struct {
 	Target INode
-	Event  dom.Event
+	// Event is the browser event (a dom.Event from honnef.co/go/js/dom/v2).
+	// It is only available when the code runs in the browser.
+	Event domEvent
 }
 
 // Event is the name of a DOM event.
@@ -79,7 +78,7 @@ const (
 type eventListener struct {
 	handler  func(EventContext)
 	attached bool
-	wrapper  js.Func
+	domListener
 }
 
 // binding is an Effect owned by a node. It is disposed when the node leaves the
@@ -95,11 +94,9 @@ const svgNamespace = "http://www.w3.org/2000/svg"
 // VNode is a node of the UI tree. It keeps the state you want (text, attributes, classes, styles, listeners and children) and the renderer applies the difference to the DOM.
 // Every method returns *VNode so calls can be chained.
 type VNode struct {
-	domElement     dom.Element
-	haveDomElement bool
-	textNode       js.Value
-	bindings       []*binding
-	deactivated    bool
+	domState    // the DOM element and what goes with it, only in the browser
+	bindings    []*binding
+	deactivated bool
 
 	father *VNode
 	status changeStatus
@@ -112,6 +109,7 @@ type VNode struct {
 	id        diffValue[string]
 	text      diffValue[string]
 	value     diffValue[string]
+	checked   diffValue[bool]
 
 	styles         map[string]diffValue[string]
 	classes        map[string]changeStatus
@@ -120,34 +118,6 @@ type VNode struct {
 	children       []*VNode
 
 	dirtyFlags [flagNumber]bool
-}
-
-// NewWithRenderer mounts a node on an existing DOM element with a custom Renderer.
-func NewWithRenderer(element dom.Element, renderer Renderer) *VNode {
-	VNode := newVNode(element.NodeName())
-	VNode.status = unchanged
-	VNode.domElement = element
-	VNode.haveDomElement = true
-	VNode.renderer = renderer
-	VNode.haveRenderer = true
-	return VNode
-}
-
-// New mounts a node on an existing DOM element. Its children are rendered inside the element.
-func New(element dom.Element) *VNode {
-	return NewWithRenderer(element, newRenderer(element))
-}
-
-// NewFromId mounts a node on the DOM element with that id.
-func NewFromId(id string) *VNode {
-	mountPoint := dom.GetWindow().Document().GetElementByID(id)
-	return New(mountPoint)
-}
-
-// NewFromIdWithRenderer is NewFromId with a custom Renderer.
-func NewFromIdWithRenderer(id string, renderer Renderer) *VNode {
-	mountPoint := dom.GetWindow().Document().GetElementByID(id)
-	return NewWithRenderer(mountPoint, renderer)
 }
 
 // NewWithoutMount creates a node that is not attached to the DOM, for example to render HTML with a StringRenderer.
@@ -246,12 +216,6 @@ func (element *VNode) reactivate() {
 			child.reactivate()
 		}
 	}
-}
-
-// Underlying returns the DOM element, once it has been rendered.
-// Input, textarea, select, option, a, button, form, img, label, canvas, video and audio nodes keep honnef's specific type (for example *dom.HTMLInputElement). Other nodes are a *dom.BasicHTMLElement.
-func (element *VNode) Underlying() dom.Element {
-	return element.domElement
 }
 
 // AsVNode returns the node itself. It exists for compatibility with code that used the INode interface.
@@ -538,6 +502,27 @@ func (element *VNode) Value(t string) *VNode {
 	return element
 }
 
+// Checked sets whether a checkbox or radio button is checked.
+func (element *VNode) Checked(on bool) *VNode {
+	// Not deduplicated, like Value: the user can toggle it at any time, so the
+	// renderer compares with the real state when it paints.
+	element.checked.nextValue = on
+	element.checked.status = changeModified
+	element.mark()
+	return element
+}
+
+// BindChecked keeps a checkbox or radio button in sync with the signal.
+func (element *VNode) BindChecked(signal Gettable[bool]) *VNode {
+	element.bind(func() { element.Checked(signal.Get()) })
+	return element
+}
+
+// BindOnChecked writes the checked state of the element to the signal on every change event.
+func (element *VNode) BindOnChecked(signal Settable[bool]) *VNode {
+	return element.On(EventChange, func(ctx EventContext) { signal.Set(targetChecked(ctx)) })
+}
+
 // BindValue keeps the value of an input, textarea or option in sync with the
 // signal. A textarea also gets it as its text.
 func (element *VNode) BindValue(signal Gettable[string]) *VNode {
@@ -549,10 +534,6 @@ func (element *VNode) BindValue(signal Gettable[string]) *VNode {
 		}
 	})
 	return element
-}
-
-func targetValue(ctx EventContext) string {
-	return ctx.Event.Target().Underlying().Get("value").String()
 }
 
 // BindOnInput writes the value of the element to the signal on every input event.

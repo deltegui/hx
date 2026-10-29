@@ -1,3 +1,5 @@
+//go:build js && wasm
+
 package hx
 
 import (
@@ -317,6 +319,9 @@ func (element *VNode) render() {
 	if element.value.status != unchanged {
 		element.updateValue()
 	}
+	if element.checked.status != unchanged {
+		element.updateChecked()
+	}
 	if element.isDirty(flagEventListeners) {
 		element.updateEventListeners()
 	}
@@ -467,6 +472,15 @@ func (element *VNode) updateText() {
 		element.textNode.Set("nodeValue", text)
 	}
 	element.text.tick()
+}
+
+func (element *VNode) updateChecked() {
+	jsVal := element.domElement.Underlying()
+	on := element.checked.Value()
+	if jsVal.Get("checked").Truthy() != on {
+		jsVal.Set("checked", on)
+	}
+	element.checked.tick()
 }
 
 func (element *VNode) updateValue() {

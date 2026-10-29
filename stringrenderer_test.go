@@ -11,7 +11,7 @@ func render(node INode) string {
 
 func TestStringRendererAttributesAndStyles(t *testing.T) {
 	got := render(Div().Id("x").Class("b", "a").Style("color", "red").Attribute("title", "hi").Text("a<b"))
-	want := `<DIV id="x" class="a b" style="color:red;" title="hi">a&lt;b</DIV>`
+	want := `<div id="x" class="a b" style="color:red;" title="hi">a&lt;b</div>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
 	}
@@ -19,7 +19,7 @@ func TestStringRendererAttributesAndStyles(t *testing.T) {
 
 func TestStringRendererVoidAndInput(t *testing.T) {
 	got := render(Div().Body(Input().Type("text").Value("v"), Br()))
-	want := `<DIV><INPUT value="v" type="text"/><BR/></DIV>`
+	want := `<div><input value="v" type="text"/><br/></div>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
 	}
@@ -27,7 +27,7 @@ func TestStringRendererVoidAndInput(t *testing.T) {
 
 func TestStringRendererNoopIsTransparent(t *testing.T) {
 	got := render(Ul().Body(Noop().Body(Li().Text("1"), Li().Text("2"))))
-	want := `<UL><LI>1</LI><LI>2</LI></UL>`
+	want := `<ul><li>1</li><li>2</li></ul>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
 	}
@@ -35,7 +35,7 @@ func TestStringRendererNoopIsTransparent(t *testing.T) {
 
 func TestStringRendererSkipsRemoved(t *testing.T) {
 	got := render(Div().Class("a", "b").RemoveClass("a").Style("x", "1").RemoveStyle("x").Attribute("k", "v").RemoveAttribute("k"))
-	want := `<DIV class="b"></DIV>`
+	want := `<div class="b"></div>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
 	}
@@ -46,7 +46,7 @@ func TestBodyReplacedDropsOldChildren(t *testing.T) {
 	a, b := Span().Text("a"), Span().Text("b")
 	d.Body(a, b)
 	d.Body(b)
-	if got := render(d); got != `<DIV><SPAN>b</SPAN></DIV>` {
+	if got := render(d); got != `<div><span>b</span></div>` {
 		t.Fatalf("got %s", got)
 	}
 	if len(d.AsVNode().children) != 2 { // a (deleted, pending removal) and b
@@ -122,17 +122,17 @@ func TestOnReplacesHandler(t *testing.T) {
 func TestBindingStopsWhenDeactivated(t *testing.T) {
 	s := Signal("a")
 	node := Span().BindText(s)
-	if got := render(node); got != `<SPAN>a</SPAN>` {
+	if got := render(node); got != `<span>a</span>` {
 		t.Fatalf("got %s", got)
 	}
 	s.Set("b")
-	if got := render(node); got != `<SPAN>b</SPAN>` {
+	if got := render(node); got != `<span>b</span>` {
 		t.Fatalf("got %s", got)
 	}
 
 	node.AsVNode().deactivate()
 	s.Set("c")
-	if got := render(node); got != `<SPAN>b</SPAN>` {
+	if got := render(node); got != `<span>b</span>` {
 		t.Fatalf("binding still active after deactivate: %s", got)
 	}
 	if len(s.subscribers) != 0 {
@@ -140,11 +140,11 @@ func TestBindingStopsWhenDeactivated(t *testing.T) {
 	}
 
 	node.AsVNode().reactivate()
-	if got := render(node); got != `<SPAN>c</SPAN>` {
+	if got := render(node); got != `<span>c</span>` {
 		t.Fatalf("binding not restored with the current value: %s", got)
 	}
 	s.Set("d")
-	if got := render(node); got != `<SPAN>d</SPAN>` {
+	if got := render(node); got != `<span>d</span>` {
 		t.Fatalf("binding not live after reactivate: %s", got)
 	}
 }
@@ -210,7 +210,7 @@ func TestNodeEffectCanRebuildItsOwnBody(t *testing.T) {
 		list.Body(Each(items, func(i int, v string) INode { return Li().Text(v) }))
 	})
 	items.Set([]string{"a", "b"})
-	if got := render(list); got != `<UL><LI>a</LI><LI>b</LI></UL>` {
+	if got := render(list); got != `<ul><li>a</li><li>b</li></ul>` {
 		t.Fatalf("got %s", got)
 	}
 }
@@ -271,7 +271,7 @@ func TestDiscardedNodeComesBack(t *testing.T) {
 	If(Value(false), node)
 	text.Set("b")
 	node.AsVNode().reactivate()
-	if got := render(node); got != `<SPAN>b</SPAN>` {
+	if got := render(node); got != `<span>b</span>` {
 		t.Fatalf("got %s", got)
 	}
 	if len(text.subscribers) != 1 {
@@ -282,7 +282,7 @@ func TestDiscardedNodeComesBack(t *testing.T) {
 func TestFluentChainingInAnyOrder(t *testing.T) {
 	// Input-specific and generic methods can be mixed, because everything returns *VNode.
 	got := render(Input().Placeholder("p").Class("c").Type("text").Id("x").Style("a", "b").Value("v").Attribute("k", "v"))
-	want := `<INPUT id="x" class="c" style="a:b;" value="v" k="v" placeholder="p" type="text"/>`
+	want := `<input id="x" class="c" style="a:b;" value="v" k="v" placeholder="p" type="text"/>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
 	}
@@ -290,11 +290,11 @@ func TestFluentChainingInAnyOrder(t *testing.T) {
 
 func TestFluentHelpers(t *testing.T) {
 	got := render(A().Href("/x").ClassIf("on", true).ClassIf("off", false).Textf("%d items", 3))
-	want := `<A class="on" href="/x">3 items</A>`
+	want := `<a class="on" href="/x">3 items</a>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
 	}
-	if got := render(El("details").Body(El("summary").Text("s"))); got != `<DETAILS><SUMMARY>s</SUMMARY></DETAILS>` {
+	if got := render(El("details").Body(El("summary").Text("s"))); got != `<details><summary>s</summary></details>` {
 		t.Fatalf("got %s", got)
 	}
 }
@@ -303,14 +303,14 @@ func TestFluentHelpers(t *testing.T) {
 func fluentCard() INode { return Div().Class("card") }
 
 func TestINodeReturnCanBeChained(t *testing.T) {
-	if got := render(fluentCard().Class("wide").Text("x")); got != `<DIV class="card wide">x</DIV>` {
+	if got := render(fluentCard().Class("wide").Text("x")); got != `<div class="card wide">x</div>` {
 		t.Fatalf("got %s", got)
 	}
 }
 
 func TestTextAreaBindValueSetsText(t *testing.T) {
 	s := Signal("hi")
-	if got := render(TextArea().BindValue(s)); got != `<TEXTAREA>hi</TEXTAREA>` {
+	if got := render(TextArea().BindValue(s)); got != `<textarea>hi</textarea>` {
 		t.Fatalf("got %s", got)
 	}
 }
@@ -332,10 +332,10 @@ func TestShowFnBuildsOnlyTheUsedPath(t *testing.T) {
 	buildA := func() INode { a++; return Span().Text("a") }
 	buildB := func() INode { b++; return Span().Text("b") }
 
-	if got := render(ShowFn(Value(true), buildA, buildB)); got != `<SPAN>a</SPAN>` || a != 1 || b != 0 {
+	if got := render(ShowFn(Value(true), buildA, buildB)); got != `<span>a</span>` || a != 1 || b != 0 {
 		t.Fatalf("got %s a=%d b=%d", got, a, b)
 	}
-	if got := render(ShowFn(Value(false), buildA, buildB)); got != `<SPAN>b</SPAN>` || a != 1 || b != 1 {
+	if got := render(ShowFn(Value(false), buildA, buildB)); got != `<span>b</span>` || a != 1 || b != 1 {
 		t.Fatalf("got %s a=%d b=%d", got, a, b)
 	}
 	if ShowFn(Value(false), buildA, nil) != nil {

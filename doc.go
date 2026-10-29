@@ -28,10 +28,22 @@
 // Body sets the children. If, Show, IfFn, ShowFn and Each build parts of the
 // UI that depend on signals.
 //
+// # Forms and requests
+//
+// Do makes a request in the browser, with bodies for forms and files, progress,
+// timeout and cancel. Action and Resource keep the state of a request in
+// signals. The package hxjson sends and reads JSON. A form is plain HTML, so it
+// also works without WASM when the page was rendered by a server.
+//
 // # Rendering
 //
 // Changes are collected and applied to the DOM once per animation frame by a
 // DiffRenderer. A StringRenderer writes HTML instead.
 //
-// The package only builds for GOOS=js GOARCH=wasm.
+// # Server rendering
+//
+// RenderToString writes the HTML of a UI on a server, and Hydrate brings that
+// HTML to life in the browser. The core of the package (signals, nodes,
+// StringRenderer, RenderToString) builds for any platform. The part that talks
+// to the DOM (New, NewFromId, Hydrate...) only builds for GOOS=js GOARCH=wasm.
 package hx

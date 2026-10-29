@@ -12,6 +12,8 @@ var voidElements = map[string]bool{
 	"TRACK": true, "WBR": true,
 }
 
+func isVoid(tag string) bool { return voidElements[strings.ToUpper(tag)] }
+
 // StringRenderer writes a tree of nodes as HTML. Use the zero value, call Render and then String.
 type StringRenderer struct {
 	buff strings.Builder
@@ -33,7 +35,7 @@ func (ssr *StringRenderer) Render(current *VNode) {
 		return
 	}
 	ssr.writeOpenTag(current)
-	if !voidElements[current.tag] {
+	if !isVoid(current.tag) {
 		ssr.writeBody(current)
 		ssr.writeCloseTag(current)
 	}
@@ -48,22 +50,27 @@ func (ssr *StringRenderer) writeChildren(current *VNode) {
 }
 
 func (ssr *StringRenderer) writeBody(current *VNode) {
+	// The HTML parser drops a newline right after <textarea> and <pre>, so one
+	// more is written to keep the text the same when the browser reads it.
+	if text := current.text.nextValue; (current.tag == "TEXTAREA" || current.tag == "PRE") && strings.HasPrefix(text, "\n") {
+		ssr.buff.WriteString("\n")
+	}
 	ssr.buff.WriteString(html.EscapeString(current.text.nextValue))
 	ssr.writeChildren(current)
 }
 
 func (ssr *StringRenderer) writeCloseTag(current *VNode) {
 	ssr.buff.WriteString("</")
-	ssr.buff.WriteString(current.tag)
+	ssr.buff.WriteString(strings.ToLower(current.tag))
 	ssr.buff.WriteString(">")
 }
 
 func (ssr *StringRenderer) writeOpenTag(current *VNode) {
 	ssr.buff.WriteRune('<')
-	ssr.buff.WriteString(current.tag)
+	ssr.buff.WriteString(strings.ToLower(current.tag))
 	ssr.writeAttributes(current)
 
-	if voidElements[current.tag] {
+	if isVoid(current.tag) {
 		ssr.buff.WriteString("/>")
 	} else {
 		ssr.buff.WriteRune('>')
@@ -108,8 +115,11 @@ func (ssr *StringRenderer) writeAttributes(current *VNode) {
 		ssr.writeAttribute("style", styles.String())
 	}
 
-	if value := current.value.nextValue; value != "" && current.tag != "TEXTAREA" {
+	if value := current.value.nextValue; value != "" && current.tag != "TEXTAREA" && current.tag != "SELECT" {
 		ssr.writeAttribute("value", value)
+	}
+	if current.checked.nextValue {
+		ssr.writeAttribute("checked", "")
 	}
 
 	for _, attrName := range sortedKeys(current.attributes) {

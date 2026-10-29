@@ -65,9 +65,30 @@ Each node has at most one DOM listener per event type. `On` stores the handler a
 ```go
 var r hx.StringRenderer
 r.Render(hx.Div().Class("card").Body(hx.P().Text("hi")))
-r.String() // <DIV class="card"><P>hi</P></DIV>
+r.String() // <div class="card"><p>hi</p></div>
 ```
 
-`Noop` nodes are transparent, removed entries are skipped, and attributes, classes and styles come out sorted so the output is stable. The package still only builds for WASM, so this is for generating HTML inside the browser (previews, copy to clipboard...), not for a server.
+Tags are lowercase, `Noop` nodes are transparent, removed entries are skipped, and attributes, classes and styles come out sorted so the output is stable. It builds on every platform, which is what makes server rendering possible: `RenderToString` runs your UI in a root and returns what a `StringRenderer` wrote. See [Server rendering and hydration](server-rendering.md).
 
 Custom renderers are possible: implement `Renderer` (`ScheduleRender` and `Mark`) and mount with `hx.NewWithRenderer`.
+
+## Requests
+
+`hx.Do` uses `XMLHttpRequest`, not `fetch`, because it is the only one that tells you how much of a body has been uploaded. It blocks the goroutine that calls it, and the answer is delivered from the browser through a channel, which is why it cannot be waited for inside an event handler. `Action` wraps it: it runs the function on a goroutine, keeps the state in signals, and cancels the previous run when you start a new one.
+
+The core does not import `encoding/json` or `net/url`: Go keeps every package a program imports even if it is never used, and they would add about 350 KB to every WASM file. JSON lives in `hxjson`.
+
+## Hydration
+
+`Hydrate` builds the node tree exactly as a normal render does, but instead of creating DOM elements it takes the ones the server wrote. The tree already says how many elements each node produces (a normal node one, a `Noop` the sum of its children), so the HTML needs no markers.
+
+For each node, in order:
+
+1. It checks that the element has the same tag. If not, the element is removed and the node is rendered by the browser as new.
+2. It records that the text, attributes, classes and styles that match are already applied, using the same "committed value" that the renderer keeps, so the first render writes nothing. What does not match is left pending, and the renderer sets it.
+3. It does the same for the children, matching them with the child elements one by one. If the count differs, the children are rendered by the browser.
+4. It attaches the event listeners.
+
+After that the nodes are in the same state as if the browser had created them, and everything above (signals, bindings, `EachKeyed`...) works unchanged.
+
+The core is split by build tags: `dom_wasm.go` and `dom_native.go` give the shared code the DOM-side fields and functions (or empty versions of them on a server).

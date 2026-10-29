@@ -1,6 +1,6 @@
 # API reference
 
-Everything is in the package `github.com/deltegui/hx`. The same text is available with `GOOS=js GOARCH=wasm go doc -all github.com/deltegui/hx`.
+Everything is in the package `github.com/deltegui/hx`. The parts that need the browser are marked "browser only" and only exist for `GOOS=js GOARCH=wasm`; the rest builds on every platform. The same text is available with `GOOS=js GOARCH=wasm go doc -all github.com/deltegui/hx`.
 
 ## Signals
 
@@ -76,6 +76,7 @@ All of them return `*VNode`, so they can be chained in any order, except the one
 | `Id(string)` | |
 | `Href(v)`, `Src(v)`, `Placeholder(v)`, `Type(v)`, `Selected()` | Shortcuts for `Attribute`. |
 | `Value(string)` | The `value` property of inputs, textareas, selects and options. |
+| `Checked(bool)` | Whether a checkbox or radio button is checked. |
 
 ### Events
 
@@ -86,7 +87,7 @@ All of them return `*VNode`, so they can be chained in any order, except the one
 
 Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSubmit EventFocus EventBlur EventDblClick EventMouseEnter EventMouseLeave`. `Event` is a string, so `hx.Event("scroll")` works.
 
-`EventContext` has two fields: `Target *VNode` and `Event dom.Event`.
+`EventContext` has two fields: `Target *VNode` and `Event dom.Event` (`any` on a server).
 
 ### Bindings and effects
 
@@ -94,6 +95,8 @@ Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSub
 |---|---|
 | `BindText(g Gettable[string])` | Text follows the signal. |
 | `BindValue(g Gettable[string])` | Value follows the signal (a textarea also gets it as text). |
+| `BindChecked(g Gettable[bool])` | The checked state of a checkbox or radio follows the signal. |
+| `BindOnChecked(s Settable[bool])` | Write the checked state to the signal on `change`. |
 | `BindOnInput(s Settable[string])` | Write the element's value to the signal on `input`. |
 | `BindOnChange(s Settable[string])` | Same on `change`. |
 | `Effect(fn func())` | An effect owned by the node. |
@@ -117,6 +120,65 @@ Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSub
 | `EachMap[K comparable, T](src Gettable[map[K]T], render func(k K, v T) INode) INode` | One node per entry, **unspecified order**. |
 | `EachMapSorted[K cmp.Ordered, T](src, render) INode` | Ordered by key. |
 | `EachKeyed[T any, K comparable](src Gettable[[]T], key func(T) K, render func(key K, item Gettable[T], index Gettable[int]) INode) INode` | Rows are built once per key and reused: they keep their DOM element and state. Use it directly as a child, not inside an effect. |
+
+## Server rendering and hydration
+
+| | |
+|---|---|
+| `RenderToString(build func() INode) string` | The HTML of the UI. Runs effects once and releases them. Serialized. Builds everywhere. |
+| `StateScript(id, json string) string` | A `<script type="application/json">` carrying `json`, escaped. Builds everywhere. |
+| `OnMount(fn func())` | Runs `fn` only in the browser, after hydration. Ignored on the server. |
+| `IsServer() bool` | `true` on the server, `false` in the browser. |
+| `Hydrate(id string, build func() INode) (dispose func())` | Adopts the server's HTML in the element with that id. Browser only. |
+| `HydrateElement(mount dom.Element, build) (dispose func())` | Same for an element you have. Browser only. |
+| `ReadState(id string) string` | The text of the element with that id (what `StateScript` wrote). Browser only. |
+
+## Requests
+
+Browser only for the request itself: on a server `Do` returns `ErrNotInBrowser`, but the types build everywhere. See [Forms and requests](forms-and-requests.md).
+
+| | |
+|---|---|
+| `Do(ctx, Request) (Response, error)` | Make a request and wait for the answer. Blocks: use a goroutine or an `Action`. |
+| `Request` | `Method`, `URL`, `Header`, `Body`, `Timeout`, `Credentials`, `OnProgress` |
+| `Response` | `Status`, `StatusText`, `Header`, `OK()`, `Text()`, `Bytes()`, `Err()` |
+| `HTTPError` | `Status`, `StatusText`, `Body`. What `Response.Err()` returns for a status that is not 2xx |
+| `Progress` | `Upload`, `Loaded`, `Total`, `Fraction()` |
+| `Body` | what a request sends |
+| `TextBody(contentType, text)` | text |
+| `FormValues(map[string][]string)` | `application/x-www-form-urlencoded` (a `url.Values` works) |
+| `FormOf(form *VNode)` | the fields and files of a `<form>` in the page (`multipart/form-data`) |
+| `NewMultipart()` | `.Field(name, value)`, `.File(name, file)`, `.Bytes(name, filename, type, data)`, `.Body()` |
+| `FilesOf(input *VNode) []File` | the files chosen in a file input |
+| `File` | `Name`, `Size`, `Type`, `Bytes(ctx) ([]byte, error)` |
+| `IsCanceled(err)`, `IsTimeout(err)` | what ended a request |
+| `ErrNotInBrowser` | `Do` was called on a server |
+
+### `hxjson`: package `github.com/deltegui/hx/hxjson`
+
+JSON, in its own package so programs that do not use it do not carry `encoding/json` (about 250 KB).
+
+| | |
+|---|---|
+| `hxjson.Body(v) (*hx.Body, error)` | a body that sends `v` as JSON |
+| `hxjson.Decode(response, &v) error` | read the JSON body of an answer |
+| `hxjson.Send[T](ctx, method, url, body) (T, error)` | send JSON, decode the answer. A status that is not 2xx is an `*hx.HTTPError` |
+| `hxjson.Get[T](ctx, url)`, `hxjson.Post[T](ctx, url, body)` | shortcuts |
+
+### Actions and resources
+
+| | |
+|---|---|
+| `Action[A, R](fn func(ctx, A) (R, error)) *ActionT[A, R]` | The state of something the user triggers |
+| `(*ActionT) Run(arg A)` | Start it. If it is running, that run is canceled: the last call wins |
+| `Cancel()`, `Reset()` | Stop the run / stop it and forget the error and the result |
+| `Pending()`, `Error()`, `Value()` | Signals (`Gettable`) |
+| `OnSuccess(fn)`, `OnError(fn)` | Called when a run ends, after the state is updated. Return the action, to chain |
+| `Resource[T](fetch) *ResourceT[T]` | Data from a server, loaded when the UI is in the browser |
+| `ResourceWith[T](initial, fetch)` | Same, starting from `initial` and not loading by itself |
+| `ResourceFor[S, T](source, fetch)` | Loads again each time the `source` signal changes |
+| `(*ResourceT) Value()`, `Loading()`, `Error()` | Signals |
+| `Refetch()`, `Cancel()`, `Set(v)` | Load again / stop / replace the value |
 
 ## Renderers
 

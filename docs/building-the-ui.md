@@ -152,12 +152,12 @@ hx.Select().BindOnChange(color).Body(
 	hx.Option().Value("green").Selected().Text("Green"),
 )
 
-// checkbox: read the property from the event target
+// checkbox and radio: the checked state
 agree := hx.Signal(false)
-hx.Input().Type("checkbox").OnChange(func(ctx hx.EventContext) {
-	agree.Set(ctx.Event.Target().Underlying().Get("checked").Bool())
-})
+hx.Input().Type("checkbox").BindChecked(agree).BindOnChecked(agree)
 ```
+
+To send a form to a server, with or without files, see [Forms and requests](forms-and-requests.md).
 
 ## SVG
 

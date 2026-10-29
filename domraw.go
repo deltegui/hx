@@ -1,6 +1,9 @@
+//go:build js && wasm
+
 package hx
 
 import (
+	"strings"
 	"syscall/js"
 
 	"honnef.co/go/js/dom/v2"
@@ -39,6 +42,18 @@ func newDomElement(tag, namespace string) dom.Element {
 		return domDocument().CreateElement(tag)
 	}
 	raw := rawDocument().Call("createElement", tag)
+	return &dom.BasicHTMLElement{BasicElement: &dom.BasicElement{BasicNode: &dom.BasicNode{Value: raw}}}
+}
+
+// wrapExisting wraps a DOM element that already exists (the page was rendered by a server).
+// It gives the same type newDomElement would have given.
+func wrapExisting(raw js.Value, tag, namespace string) dom.Element {
+	if namespace != "" {
+		return &dom.BasicElement{BasicNode: &dom.BasicNode{Value: raw}}
+	}
+	if typedTags[strings.ToUpper(tag)] {
+		return dom.WrapElement(raw)
+	}
 	return &dom.BasicHTMLElement{BasicElement: &dom.BasicElement{BasicNode: &dom.BasicNode{Value: raw}}}
 }
 

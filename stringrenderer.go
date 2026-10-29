@@ -12,13 +12,18 @@ var voidElements = map[string]bool{
 	"TRACK": true, "WBR": true,
 }
 
+// StringRenderer writes a tree of nodes as HTML. Use the zero value, call Render and then String.
 type StringRenderer struct {
 	buff strings.Builder
 }
 
-func (ssr *StringRenderer) ScheduleRender()     {}
+// ScheduleRender does nothing: a StringRenderer renders when you call Render.
+func (ssr *StringRenderer) ScheduleRender() {}
+
+// Mark does nothing: a StringRenderer renders when you call Render.
 func (ssr *StringRenderer) Mark(element *VNode) {}
 
+// Render appends the HTML of the node and its children. Noop nodes and removed entries are skipped.
 func (ssr *StringRenderer) Render(current *VNode) {
 	if current.status == changeDeleted {
 		return
@@ -116,10 +121,12 @@ func (ssr *StringRenderer) writeAttributes(current *VNode) {
 	}
 }
 
+// String returns the HTML written so far.
 func (ssr *StringRenderer) String() string {
 	return ssr.buff.String()
 }
 
+// Reset discards the HTML written so far.
 func (ssr *StringRenderer) Reset() {
 	ssr.buff.Reset()
 }

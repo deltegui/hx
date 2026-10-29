@@ -1,21 +1,27 @@
 package hx
 
 import (
+	"fmt"
+	"strings"
 	"syscall/js"
 
 	"honnef.co/go/js/dom/v2"
 )
 
+// Renderer decides when and how the changes of the nodes reach the output.
+// DiffRenderer updates the browser DOM and StringRenderer writes HTML.
 type Renderer interface {
 	ScheduleRender()
 	Mark(element *VNode)
 }
 
+// EventContext is what an event handler receives: the node that has the listener and the browser event.
 type EventContext struct {
 	Target INode
 	Event  dom.Event
 }
 
+// Event is the name of a DOM event.
 type Event string
 
 const (
@@ -23,6 +29,14 @@ const (
 	EventInput  Event = "input"
 	EventChange Event = "change"
 	EventKeyUp  Event = "keyup"
+
+	EventKeyDown    Event = "keydown"
+	EventSubmit     Event = "submit"
+	EventFocus      Event = "focus"
+	EventBlur       Event = "blur"
+	EventDblClick   Event = "dblclick"
+	EventMouseEnter Event = "mouseenter"
+	EventMouseLeave Event = "mouseleave"
 )
 
 type changeStatus int
@@ -34,36 +48,19 @@ const (
 	changeDeleted
 )
 
-type INode interface {
-	AsVNode() *VNode
+// INode is a node of the tree. Every method of VNode returns *VNode, so calls
+// can be chained in any order, and a function that returns INode can be chained
+// too. The old per-element types are aliases of VNode.
+type INode = *VNode
 
-	Id(id string) INode
-
-	Text(t string) INode
-	BindText(signal Gettable[string]) INode
-
-	Body(childs ...INode) INode
-	BodyList(childs []INode) INode
-
-	Attribute(key, value string) INode
-	RemoveAttribute(key string) INode
-	GetAttribute(key string) string
-	HaveAttribute(key, value string) bool
-
-	Style(key, value string) INode
-	RemoveStyle(key string) INode
-	GetStyle(key string) string
-	HaveStyle(key, value string) bool
-
-	Class(classes ...string) INode
-	RemoveClass(classes ...string) INode
-	HaveClass(class string) bool
-
-	On(event Event, handler func(ctx EventContext)) INode
-	OnClick(handler func(ctx EventContext)) INode
-
-	Effect(fn func()) INode
-}
+// Deprecated aliases kept for compatibility: they are all VNode.
+type (
+	InputVNode   = VNode
+	TextAreaNode = VNode
+	OptionNode   = VNode
+	AVNode       = VNode
+	NoopNode     = VNode
+)
 
 type dirtyFlag int
 
@@ -94,15 +91,16 @@ type binding struct {
 
 const svgNamespace = "http://www.w3.org/2000/svg"
 
+// VNode is a node of the UI tree. It keeps the state you want (text, attributes, classes, styles, listeners and children) and the renderer applies the difference to the DOM.
+// Every method returns *VNode so calls can be chained.
 type VNode struct {
 	domElement     dom.Element
 	haveDomElement bool
-	textNode       *dom.Text
+	textNode       js.Value
 	bindings       []*binding
 	deactivated    bool
 
 	father *VNode
-	Owner  INode
 	status changeStatus
 
 	renderer     Renderer
@@ -123,6 +121,7 @@ type VNode struct {
 	dirtyFlags [flagNumber]bool
 }
 
+// NewWithRenderer mounts a node on an existing DOM element with a custom Renderer.
 func NewWithRenderer(element dom.Element, renderer Renderer) *VNode {
 	VNode := newVNode(element.NodeName())
 	VNode.status = unchanged
@@ -133,20 +132,24 @@ func NewWithRenderer(element dom.Element, renderer Renderer) *VNode {
 	return VNode
 }
 
+// New mounts a node on an existing DOM element. Its children are rendered inside the element.
 func New(element dom.Element) *VNode {
 	return NewWithRenderer(element, newRenderer(element))
 }
 
+// NewFromId mounts a node on the DOM element with that id.
 func NewFromId(id string) *VNode {
 	mountPoint := dom.GetWindow().Document().GetElementByID(id)
 	return New(mountPoint)
 }
 
+// NewFromIdWithRenderer is NewFromId with a custom Renderer.
 func NewFromIdWithRenderer(id string, renderer Renderer) *VNode {
 	mountPoint := dom.GetWindow().Document().GetElementByID(id)
 	return NewWithRenderer(mountPoint, renderer)
 }
 
+// NewWithoutMount creates a node that is not attached to the DOM, for example to render HTML with a StringRenderer.
 func NewWithoutMount(tag string, renderer Renderer) *VNode {
 	VNode := newVNode(tag)
 	VNode.setRenderer(renderer, true)
@@ -171,7 +174,6 @@ func newVNode(tag string) *VNode {
 
 		dirtyFlags: [flagNumber]bool{false},
 	}
-	vnode.Owner = vnode
 	return vnode
 }
 
@@ -236,10 +238,13 @@ func (element *VNode) reactivate() {
 	}
 }
 
+// Underlying returns the DOM element, once it has been rendered.
+// Input, textarea, select, option, a, button, form, img, label, canvas, video and audio nodes keep honnef's specific type (for example *dom.HTMLInputElement). Other nodes are a *dom.BasicHTMLElement.
 func (element *VNode) Underlying() dom.Element {
 	return element.domElement
 }
 
+// AsVNode returns the node itself. It exists for compatibility with code that used the INode interface.
 func (element *VNode) AsVNode() *VNode {
 	return element
 }
@@ -280,11 +285,14 @@ func (element *VNode) scheludeRender() {
 	}
 }
 
-func (element *VNode) Body(childs ...INode) INode {
+// Body replaces the children of the node. Nil children are skipped.
+// Nodes that were already children and are passed again are reused (moved), not recreated.
+func (element *VNode) Body(childs ...INode) *VNode {
 	return element.BodyList(childs)
 }
 
-func (element *VNode) BodyList(childs []INode) INode {
+// BodyList is Body with a slice.
+func (element *VNode) BodyList(childs []INode) *VNode {
 	incoming := make(map[*VNode]struct{}, len(childs))
 	for _, child := range childs {
 		if child != nil {
@@ -323,7 +331,9 @@ func (element *VNode) BodyList(childs []INode) INode {
 	return element
 }
 
-func (element *VNode) On(event Event, handler func(ctx EventContext)) INode {
+// On sets the handler of an event. Calling it again for the same event replaces the handler.
+// The handler runs untracked, and a render is scheduled after it.
+func (element *VNode) On(event Event, handler func(ctx EventContext)) *VNode {
 	listener, ok := element.eventListeners[event]
 	if ok {
 		listener.handler = handler
@@ -334,25 +344,29 @@ func (element *VNode) On(event Event, handler func(ctx EventContext)) INode {
 	return element
 }
 
+// OnClick is On(EventClick, handler).
 func (element *VNode) OnClick(handler func(ctx EventContext)) INode {
 	return element.On(EventClick, handler)
 }
 
-func (element *VNode) Text(t string) INode {
+// Text sets the text of the node. It is kept in its own text node, before the children.
+func (element *VNode) Text(t string) *VNode {
 	if element.text.assign(t, changeModified) {
 		element.mark()
 	}
 	return element
 }
 
-func (element *VNode) BindText(signal Gettable[string]) INode {
+// BindText keeps the text in sync with the signal. The binding belongs to the node: it stops when the node leaves the tree and starts again if the node comes back.
+func (element *VNode) BindText(signal Gettable[string]) *VNode {
 	element.bind(func() {
 		element.Text(signal.Get())
 	})
 	return element
 }
 
-func (element *VNode) Class(classes ...string) INode {
+// Class adds classes. Empty classes are ignored, and classes with spaces are ignored with a warning.
+func (element *VNode) Class(classes ...string) *VNode {
 	for _, create := range classes {
 		if len(create) <= 0 {
 			continue
@@ -370,7 +384,8 @@ func (element *VNode) Class(classes ...string) INode {
 	return element
 }
 
-func (element *VNode) RemoveClass(classes ...string) INode {
+// RemoveClass removes classes.
+func (element *VNode) RemoveClass(classes ...string) *VNode {
 	for _, remove := range classes {
 		if len(remove) <= 0 {
 			continue
@@ -390,12 +405,14 @@ func (element *VNode) RemoveClass(classes ...string) INode {
 	return element
 }
 
+// HaveClass tells if the node will have the class after the next render.
 func (element *VNode) HaveClass(class string) bool {
 	changeStatus, ok := element.classes[class]
 	return ok && changeStatus != changeDeleted
 }
 
-func (element *VNode) Attribute(key, value string) INode {
+// Attribute sets an attribute. An empty value is valid (for example disabled).
+func (element *VNode) Attribute(key, value string) *VNode {
 	if len(key) <= 0 {
 		return element
 	}
@@ -405,13 +422,15 @@ func (element *VNode) Attribute(key, value string) INode {
 	return element
 }
 
-func (element *VNode) RemoveAttribute(key string) INode {
+// RemoveAttribute removes an attribute.
+func (element *VNode) RemoveAttribute(key string) *VNode {
 	if removeEntry(element.attributes, key) {
 		element.setDirty(flagAttributes)
 	}
 	return element
 }
 
+// GetAttribute returns the value the attribute will have after the next render, or an empty string.
 func (element *VNode) GetAttribute(key string) string {
 	value, ok := element.attributes[key]
 	if !ok {
@@ -423,25 +442,29 @@ func (element *VNode) GetAttribute(key string) string {
 	return value.Value()
 }
 
+// HaveAttribute tells if the attribute will have that value after the next render.
 func (element *VNode) HaveAttribute(key, value string) bool {
 	v, ok := element.attributes[key]
 	return ok && v.status != changeDeleted && v.Value() == value
 }
 
-func (element *VNode) Style(key, value string) INode {
+// Style sets a CSS property. Properties are written together in the style attribute.
+func (element *VNode) Style(key, value string) *VNode {
 	if setEntry(element.styles, key, value) {
 		element.setDirty(flagStyles)
 	}
 	return element
 }
 
-func (element *VNode) RemoveStyle(key string) INode {
+// RemoveStyle removes a CSS property.
+func (element *VNode) RemoveStyle(key string) *VNode {
 	if removeEntry(element.styles, key) {
 		element.setDirty(flagStyles)
 	}
 	return element
 }
 
+// GetStyle returns the value the property will have after the next render, or an empty string.
 func (element *VNode) GetStyle(key string) string {
 	value, ok := element.styles[key]
 	if !ok {
@@ -453,264 +476,275 @@ func (element *VNode) GetStyle(key string) string {
 	return value.Value()
 }
 
+// HaveStyle tells if the property will have that value after the next render.
 func (element *VNode) HaveStyle(key, value string) bool {
 	v, ok := element.styles[key]
 	return ok && v.status != changeDeleted && v.Value() == value
 }
 
-func (element *VNode) Id(id string) INode {
+// Id sets the id attribute of the node.
+func (element *VNode) Id(id string) *VNode {
 	if element.id.assign(id, changeModified) {
 		element.mark()
 	}
 	return element
 }
 
-func (element *InputVNode) BindOnChange(signal Settable[string]) *InputVNode {
-	element.On(EventChange, func(ctx EventContext) {
-		signal.Set(ctx.Event.Target().Underlying().Get("value").String())
-	})
-	return element
+// Src sets the src attribute.
+func (element *VNode) Src(v string) *VNode { return element.Attribute("src", v) }
+
+// Href sets the href attribute.
+func (element *VNode) Href(v string) *VNode { return element.Attribute("href", v) }
+
+// Placeholder sets the placeholder attribute.
+func (element *VNode) Placeholder(v string) *VNode { return element.Attribute("placeholder", v) }
+
+// Type sets the type attribute, for example of an input.
+func (element *VNode) Type(v string) *VNode { return element.Attribute("type", v) }
+
+// Selected marks an Option as selected.
+func (element *VNode) Selected() *VNode { return element.Attribute("selected", "selected") }
+
+// Textf is Text with a format.
+func (element *VNode) Textf(format string, args ...any) *VNode {
+	return element.Text(fmt.Sprintf(format, args...))
 }
 
-func (element *InputVNode) OnKeyUp(handler func(ctx EventContext)) *InputVNode {
-	element.On(EventKeyUp, handler)
-	return element
-}
-
-func (e *VNode) Src(v string) INode { return e.Attribute("src", v) }
-
-type AVNode struct {
-	VNode
-}
-
-func newA(element *VNode) *AVNode {
-	a := &AVNode{
-		*element,
+// ClassIf adds the class when on is true and removes it otherwise.
+func (element *VNode) ClassIf(class string, on bool) *VNode {
+	if on {
+		return element.Class(class)
 	}
-	a.Owner = a
-	return a
+	return element.RemoveClass(class)
 }
 
-func (e *AVNode) Href(v string) *AVNode {
-	e.Attribute("href", v)
-	return e
-}
-
-type InputVNode struct {
-	VNode
-}
-
-func asInput(node *VNode) *InputVNode {
-	input := &InputVNode{*node}
-	input.Owner = input
-	return input
-}
-
-func (element *InputVNode) Value(t string) INode {
-	if element.value.assign(t, changeModified) {
-		element.mark()
-	}
-	return element
-}
-
-func (element *InputVNode) BindOnInput(signal Settable[string]) *InputVNode {
-	element.On(EventInput, func(ctx EventContext) {
-		signal.Set(ctx.Event.Target().Underlying().Get("value").String())
-		element.scheludeRender()
-	})
-	return element
-}
-
-func (element *InputVNode) BindValue(signal Gettable[string]) *InputVNode {
-	element.bind(func() {
-		element.Value(signal.Get())
-	})
-	return element
-}
-
-func (e *InputVNode) Placeholder(v string) *InputVNode {
-	e.Attribute("placeholder", v)
-	return e
-}
-
-func (e *InputVNode) Type(v string) *InputVNode {
-	e.Attribute("type", v)
-	return e
-}
-
-type TextAreaNode struct {
-	VNode
-}
-
-func asTextArea(node *VNode) *TextAreaNode {
-	textArea := &TextAreaNode{
-		*node,
-	}
-	textArea.Owner = textArea
-	return textArea
-}
-
-func (element *TextAreaNode) Value(t string) INode {
-	if element.value.assign(t, changeModified) {
-		element.mark()
-	}
-	return element
-}
-
-func (element *TextAreaNode) BindValue(signal Gettable[string]) *TextAreaNode {
-	element.bind(func() {
-		v := signal.Get()
-		element.Value(v)
-		element.Text(v)
-	})
-	return element
-}
-
-type OptionNode struct {
-	VNode
-}
-
-func asOption(node *VNode) *OptionNode {
-	option := &OptionNode{
-		*node,
-	}
-	option.Owner = option
-	return option
-}
-
-func (element *OptionNode) Value(t string) *OptionNode {
-	if element.value.assign(t, changeModified) {
-		element.mark()
-	}
-	return element
-}
-
-func (element *OptionNode) Selected() *OptionNode {
-	element.Attribute("selected", "selected")
+// Value sets the value property of an input, textarea, select or option.
+func (element *VNode) Value(t string) *VNode {
+	// Not deduplicated: the user can change the value in the DOM at any time,
+	// so the renderer compares with the real value when it paints.
+	element.value.nextValue = t
+	element.value.status = changeModified
 	element.mark()
 	return element
 }
 
+// BindValue keeps the value of an input, textarea or option in sync with the
+// signal. A textarea also gets it as its text.
+func (element *VNode) BindValue(signal Gettable[string]) *VNode {
+	element.bind(func() {
+		v := signal.Get()
+		element.Value(v)
+		if element.tag == "TEXTAREA" {
+			element.Text(v)
+		}
+	})
+	return element
+}
+
+func targetValue(ctx EventContext) string {
+	return ctx.Event.Target().Underlying().Get("value").String()
+}
+
+// BindOnInput writes the value of the element to the signal on every input event.
+func (element *VNode) BindOnInput(signal Settable[string]) *VNode {
+	return element.On(EventInput, func(ctx EventContext) { signal.Set(targetValue(ctx)) })
+}
+
+// BindOnChange writes the value of the element to the signal on every change event.
+func (element *VNode) BindOnChange(signal Settable[string]) *VNode {
+	return element.On(EventChange, func(ctx EventContext) { signal.Set(targetValue(ctx)) })
+}
+
+// OnInput is On(EventInput, handler).
+func (element *VNode) OnInput(handler func(ctx EventContext)) *VNode {
+	return element.On(EventInput, handler)
+}
+
+// OnChange is On(EventChange, handler).
+func (element *VNode) OnChange(handler func(ctx EventContext)) *VNode {
+	return element.On(EventChange, handler)
+}
+
+// OnKeyUp is On(EventKeyUp, handler).
+func (element *VNode) OnKeyUp(handler func(ctx EventContext)) *VNode {
+	return element.On(EventKeyUp, handler)
+}
+
+// OnKeyDown is On(EventKeyDown, handler).
+func (element *VNode) OnKeyDown(handler func(ctx EventContext)) *VNode {
+	return element.On(EventKeyDown, handler)
+}
+
+// OnSubmit is On(EventSubmit, handler). Call ctx.Event.PreventDefault() to stop the page from reloading.
+func (element *VNode) OnSubmit(handler func(ctx EventContext)) *VNode {
+	return element.On(EventSubmit, handler)
+}
+
+// OnFocus is On(EventFocus, handler).
+func (element *VNode) OnFocus(handler func(ctx EventContext)) *VNode {
+	return element.On(EventFocus, handler)
+}
+
+// OnBlur is On(EventBlur, handler).
+func (element *VNode) OnBlur(handler func(ctx EventContext)) *VNode {
+	return element.On(EventBlur, handler)
+}
+
 const noopIdNode string = "noop"
-
-type NoopNode struct {
-	VNode
-}
-
-func asNoop(node *VNode) *NoopNode {
-	noop := &NoopNode{
-		*node,
-	}
-	noop.Owner = noop
-	return noop
-}
-
-func (nop *NoopNode) Id(id string) INode {
-	return nop
-}
-func (nop *NoopNode) Text(t string) INode {
-	return nop
-}
-func (nop *NoopNode) BindText(signal Gettable[string]) INode {
-	return nop
-}
-func (nop *NoopNode) Body(childs ...INode) INode {
-	nop.VNode.BodyList(childs)
-	return nop
-}
-func (nop *NoopNode) BodyList(childs []INode) INode {
-	nop.VNode.BodyList(childs)
-	return nop
-}
-func (nop *NoopNode) Attribute(key, value string) INode {
-	return nop
-}
-func (nop *NoopNode) RemoveAttribute(key string) INode {
-	return nop
-}
-func (nop *NoopNode) Style(key, value string) INode {
-	return nop
-}
-func (nop *NoopNode) RemoveStyle(key string) INode {
-	return nop
-}
-func (nop *NoopNode) Class(classes ...string) INode {
-	return nop
-}
-func (nop *NoopNode) RemoveClass(classes ...string) INode {
-	return nop
-}
-func (nop *NoopNode) On(event Event, handler func(ctx EventContext)) INode {
-	return nop
-}
-func (nop *NoopNode) OnClick(handler func(ctx EventContext)) INode {
-	return nop
-}
 
 func asVNode(i INode) *VNode {
 	return i.AsVNode()
 }
 
+// H1 creates a <h1> element.
 func H1() *VNode { return newVNode("H1") }
+
+// H2 creates a <h2> element.
 func H2() *VNode { return newVNode("H2") }
+
+// H3 creates a <h3> element.
 func H3() *VNode { return newVNode("H3") }
+
+// H4 creates a <h4> element.
 func H4() *VNode { return newVNode("H4") }
+
+// H5 creates a <h5> element.
 func H5() *VNode { return newVNode("H5") }
+
+// H6 creates a <h6> element.
 func H6() *VNode { return newVNode("H6") }
 
+// Div creates a <div> element.
 func Div() *VNode { return newVNode("DIV") }
 
+// P creates a <p> element.
 func P() *VNode { return newVNode("P") }
 
+// Button creates a <button> element.
 func Button() *VNode { return newVNode("BUTTON") }
 
+// I creates a <i> element.
 func I() *VNode { return newVNode("I") }
 
-func A() *AVNode              { return newA(newVNode("A")) }
-func Span() *VNode            { return newVNode("SPAN") }
-func Strong() *VNode          { return newVNode("STRONG") }
-func Em() *VNode              { return newVNode("EM") }
-func Small() *VNode           { return newVNode("SMALL") }
-func Img() *VNode             { return newVNode("IMG") }
-func Input() *InputVNode      { return asInput(newVNode("INPUT")) }
-func Label() *VNode           { return newVNode("LABEL") }
-func Form() *VNode            { return newVNode("FORM") }
-func Select() *VNode          { return newVNode("SELECT") }
-func Option() *OptionNode     { return asOption(newVNode("OPTION")) }
-func TextArea() *TextAreaNode { return asTextArea(newVNode("TEXTAREA")) }
+// A creates a <a> element.
+func A() *VNode { return newVNode("A") }
 
+// Span creates a <span> element.
+func Span() *VNode { return newVNode("SPAN") }
+
+// Strong creates a <strong> element.
+func Strong() *VNode { return newVNode("STRONG") }
+
+// Em creates a <em> element.
+func Em() *VNode { return newVNode("EM") }
+
+// Small creates a <small> element.
+func Small() *VNode { return newVNode("SMALL") }
+
+// Img creates a <img> element.
+func Img() *VNode { return newVNode("IMG") }
+
+// Input creates a <input> element.
+func Input() *VNode { return newVNode("INPUT") }
+
+// Label creates a <label> element.
+func Label() *VNode { return newVNode("LABEL") }
+
+// Form creates a <form> element.
+func Form() *VNode { return newVNode("FORM") }
+
+// Select creates a <select> element.
+func Select() *VNode { return newVNode("SELECT") }
+
+// Option creates a <option> element.
+func Option() *VNode { return newVNode("OPTION") }
+
+// TextArea creates a <textarea> element.
+func TextArea() *VNode { return newVNode("TEXTAREA") }
+
+// Ul creates a <ul> element.
 func Ul() *VNode { return newVNode("UL") }
+
+// Ol creates a <ol> element.
 func Ol() *VNode { return newVNode("OL") }
+
+// Li creates a <li> element.
 func Li() *VNode { return newVNode("LI") }
 
+// Table creates a <table> element.
 func Table() *VNode { return newVNode("TABLE") }
+
+// THead creates a <thead> element.
 func THead() *VNode { return newVNode("THEAD") }
+
+// TBody creates a <tbody> element.
 func TBody() *VNode { return newVNode("TBODY") }
+
+// TFoot creates a <tfoot> element.
 func TFoot() *VNode { return newVNode("TFOOT") }
-func Tr() *VNode    { return newVNode("TR") }
-func Th() *VNode    { return newVNode("TH") }
-func Td() *VNode    { return newVNode("TD") }
 
-func Nav() *VNode     { return newVNode("NAV") }
-func Header() *VNode  { return newVNode("HEADER") }
-func Footer() *VNode  { return newVNode("FOOTER") }
-func Main() *VNode    { return newVNode("MAIN") }
+// Tr creates a <tr> element.
+func Tr() *VNode { return newVNode("TR") }
+
+// Th creates a <th> element.
+func Th() *VNode { return newVNode("TH") }
+
+// Td creates a <td> element.
+func Td() *VNode { return newVNode("TD") }
+
+// Nav creates a <nav> element.
+func Nav() *VNode { return newVNode("NAV") }
+
+// Header creates a <header> element.
+func Header() *VNode { return newVNode("HEADER") }
+
+// Footer creates a <footer> element.
+func Footer() *VNode { return newVNode("FOOTER") }
+
+// Main creates a <main> element.
+func Main() *VNode { return newVNode("MAIN") }
+
+// Section creates a <section> element.
 func Section() *VNode { return newVNode("SECTION") }
-func Article() *VNode { return newVNode("ARTICLE") }
-func Aside() *VNode   { return newVNode("ASIDE") }
 
-func Video() *VNode  { return newVNode("VIDEO") }
-func Audio() *VNode  { return newVNode("AUDIO") }
+// Article creates a <article> element.
+func Article() *VNode { return newVNode("ARTICLE") }
+
+// Aside creates a <aside> element.
+func Aside() *VNode { return newVNode("ASIDE") }
+
+// Video creates a <video> element.
+func Video() *VNode { return newVNode("VIDEO") }
+
+// Audio creates a <audio> element.
+func Audio() *VNode { return newVNode("AUDIO") }
+
+// Source creates a <source> element.
 func Source() *VNode { return newVNode("SOURCE") }
 
+// Canvas creates a <canvas> element.
 func Canvas() *VNode { return newVNode("CANVAS") }
-func Svg() *VNode    { return newVNodeNS("svg", svgNamespace) }
-func Path() *VNode   { return newVNodeNS("path", svgNamespace) }
 
+// Svg creates an <svg> element in the SVG namespace.
+func Svg() *VNode { return newVNodeNS("svg", svgNamespace) }
+
+// Path creates an SVG <path> element.
+func Path() *VNode { return newVNodeNS("path", svgNamespace) }
+
+// Br creates a <br> element.
 func Br() *VNode { return newVNode("BR") }
+
+// Hr creates a <hr> element.
 func Hr() *VNode { return newVNode("HR") }
 
+// Code creates a <code> element.
 func Code() *VNode { return newVNode("CODE") }
-func Pre() *VNode  { return newVNode("PRE") }
 
-func Noop() *NoopNode { return asNoop(newVNode(noopIdNode)) }
+// Pre creates a <pre> element.
+func Pre() *VNode { return newVNode("PRE") }
+
+// Noop is a fragment: it renders its children but no element of its own.
+func Noop() *VNode { return newVNode(noopIdNode) }
+
+// El creates a node with any tag, for the ones that have no constructor.
+func El(tag string) *VNode { return newVNode(strings.ToUpper(tag)) }

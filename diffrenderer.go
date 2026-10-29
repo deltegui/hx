@@ -8,6 +8,7 @@ import (
 	"honnef.co/go/js/dom/v2"
 )
 
+// DiffRenderer applies the changes of the nodes to the browser DOM. It batches them and runs once per animation frame.
 type DiffRenderer struct {
 	mountpoint  dom.Element
 	markNodes   map[*VNode]struct{}
@@ -25,6 +26,7 @@ func newRenderer(element dom.Element) *DiffRenderer {
 	return r
 }
 
+// Mark records that the node has changes to render.
 func (r *DiffRenderer) Mark(element *VNode) {
 	r.markNodes[element] = struct{}{}
 }
@@ -37,6 +39,7 @@ func (r *DiffRenderer) createRaf() {
 	})
 }
 
+// ScheduleRender asks for a render in the next animation frame. Several calls in the same frame render once.
 func (r *DiffRenderer) ScheduleRender() {
 	if !r.scheduled {
 		r.scheduled = true
@@ -55,6 +58,7 @@ func (renderer *DiffRenderer) render() {
 	}
 }
 
+// GetMarkedCommonAncestor returns the lowest node that contains every marked node, or nil if none is marked.
 func (renderer *DiffRenderer) GetMarkedCommonAncestor() *VNode {
 	if len(renderer.markNodes) == 0 {
 		return nil
@@ -179,9 +183,7 @@ func removeDom(node *VNode) {
 	if !node.haveDomElement {
 		return
 	}
-	if parent := node.domElement.ParentNode(); parent != nil {
-		parent.RemoveChild(node.domElement)
-	}
+	removeFromParent(node.domElement)
 }
 
 // detach removes a deleted node from the DOM and frees its resources.
@@ -229,12 +231,7 @@ func (renderer *DiffRenderer) createDomElement(element *VNode) {
 	if element.haveDomElement || len(element.tag) == 0 {
 		return
 	}
-	document := dom.GetWindow().Document()
-	if element.namespace != "" {
-		element.domElement = document.CreateElementNS(element.namespace, element.tag)
-	} else {
-		element.domElement = document.CreateElement(element.tag)
-	}
+	element.domElement = newDomElement(element.tag, element.namespace)
 	element.haveDomElement = true
 }
 
@@ -369,7 +366,7 @@ func (element *VNode) updateEventListeners() {
 		listener.wrapper = element.domElement.AddEventListener(string(event), false, func(e dom.Event) {
 			Untrack(func() {
 				listener.handler(EventContext{
-					Target: element.Owner,
+					Target: element,
 					Event:  e,
 				})
 			})
@@ -416,11 +413,10 @@ func (element *VNode) updateChildren() {
 // remove the DOM nodes of the children.
 func (element *VNode) updateText() {
 	text := element.text.Value()
-	if element.textNode == nil {
-		element.textNode = dom.GetWindow().Document().CreateTextNode(text)
-		element.domElement.InsertBefore(element.textNode, element.domElement.FirstChild())
+	if element.textNode.IsUndefined() {
+		element.textNode = prependText(element.domElement, text)
 	} else {
-		element.textNode.SetTextContent(text)
+		element.textNode.Set("nodeValue", text)
 	}
 	element.text.tick()
 }
@@ -428,6 +424,8 @@ func (element *VNode) updateText() {
 func (element *VNode) updateValue() {
 	jsVal := element.domElement.Underlying()
 	val := element.value.Value()
-	jsVal.Set("value", val)
+	if jsVal.Get("value").String() != val {
+		jsVal.Set("value", val)
+	}
 	element.value.tick()
 }

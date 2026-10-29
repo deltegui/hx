@@ -59,11 +59,13 @@ func notify(subscribers map[*Effect]struct{}) {
 	}
 }
 
+// SignalT is a reactive value. Create it with Signal.
 type SignalT[T any] struct {
 	value       T
 	subscribers map[*Effect]struct{}
 }
 
+// Signal creates a reactive value. Reading it with Get inside an effect makes the effect run again every time the value changes.
 func Signal[T any](initial T) *SignalT[T] {
 	return &SignalT[T]{
 		value:       initial,
@@ -71,16 +73,21 @@ func Signal[T any](initial T) *SignalT[T] {
 	}
 }
 
+// Get returns the value. Inside an effect (EffectFunc, node.Effect, Bind*, Computed) it subscribes the effect to the signal.
+// Outside of an effect it just returns the value, and logs a warning unless it runs inside Untrack or an event handler.
 func (signal *SignalT[T]) Get() T {
 	subscribe(signal.subscribers)
 	return signal.value
 }
 
+// Set changes the value and runs, right away, every effect that read the signal.
+// It always notifies, even if the new value equals the old one.
 func (signal *SignalT[T]) Set(v T) {
 	signal.value = v
 	signal.notify()
 }
 
+// Update sets the value to fn(current value). It does not subscribe the current effect.
 func (signal *SignalT[T]) Update(fn func(T) T) {
 	signal.Set(fn(signal.value))
 }
@@ -89,6 +96,7 @@ func (signal *SignalT[T]) notify() {
 	notify(signal.subscribers)
 }
 
+// Effect is a function that runs again when any signal it read changes.
 type Effect struct {
 	fn          func()
 	isScheduled bool
@@ -97,6 +105,10 @@ type Effect struct {
 	cleanUps    []func()
 }
 
+// EffectFunc runs fn now and again each time a signal read by fn changes.
+// An effect created inside another effect is its child and is disposed when the parent runs again.
+// An effect created inside CreateRoot is owned by the root. Any other effect lives forever unless you call Dispose.
+// For effects tied to a node use VNode.Effect instead.
 func EffectFunc(fn func()) *Effect {
 	e := &Effect{
 		fn:       fn,
@@ -218,12 +230,14 @@ func OnCleanup(fn func()) {
 	}
 }
 
+// ComputedT is a value derived from signals. Create it with Computed.
 type ComputedT[T comparable] struct {
 	value           T
 	dependentEffect *Effect
 	subscribers     map[*Effect]struct{}
 }
 
+// Computed creates a value derived from other signals or computeds. It is recalculated when its dependencies change and only notifies its own subscribers when the result is different.
 func Computed[T comparable](fn func() T) *ComputedT[T] {
 	c := &ComputedT[T]{
 		subscribers: make(map[*Effect]struct{}),
@@ -240,6 +254,7 @@ func Computed[T comparable](fn func() T) *ComputedT[T] {
 	return c
 }
 
+// Get returns the current value and subscribes the current effect, like Signal.Get.
 func (c *ComputedT[T]) Get() T {
 	subscribe(c.subscribers)
 	return c.value
@@ -249,6 +264,7 @@ func (c *ComputedT[T]) notify() {
 	notify(c.subscribers)
 }
 
+// Untrack runs fn without subscribing the current effect to the signals fn reads.
 func Untrack(fn func()) {
 	mu.Lock()
 	prev := currentEffect
@@ -267,6 +283,7 @@ func Untrack(fn func()) {
 	fn()
 }
 
+// UntrackGet reads a signal without subscribing the current effect.
 func UntrackGet[T any](gettable Gettable[T]) T {
 	var value T
 	Untrack(func() {
@@ -275,10 +292,12 @@ func UntrackGet[T any](gettable Gettable[T]) T {
 	return value
 }
 
+// Gettable is anything that can be read: a Signal, a Computed or a Value.
 type Gettable[T any] interface {
 	Get() T
 }
 
+// Settable is anything that can be written: a Signal or a Value.
 type Settable[T any] interface {
 	Set(T)
 }

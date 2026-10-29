@@ -35,6 +35,28 @@ func Show(condition Gettable[bool], ifPath, elsePath INode) INode {
 	return elsePath
 }
 
+// IfFn is like If, but the child is only built when the condition is true.
+// Prefer it when building the child is expensive or has side effects.
+func IfFn(condition Gettable[bool], build func() INode) INode {
+	if condition.Get() {
+		return build()
+	}
+	return nil
+}
+
+// ShowFn is like Show, but only the path that is going to be used is built.
+// elsePath can be nil.
+func ShowFn(condition Gettable[bool], ifPath, elsePath func() INode) INode {
+	if condition.Get() {
+		return ifPath()
+	}
+	if elsePath == nil {
+		return nil
+	}
+	return elsePath()
+}
+
+// Each renders a node for every item of the slice. The list is rebuilt when the signal changes, so call it inside an effect, for example list.Effect(func() { list.Body(hx.Each(items, render)) }).
 func Each[T any](src Gettable[[]T], renderOne func(index int, value T) INode) INode {
 	list := src.Get()
 	result := make([]INode, len(list))

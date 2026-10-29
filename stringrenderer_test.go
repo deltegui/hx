@@ -278,3 +278,78 @@ func TestDiscardedNodeComesBack(t *testing.T) {
 		t.Fatalf("subscribers=%d", len(text.subscribers))
 	}
 }
+
+func TestFluentChainingInAnyOrder(t *testing.T) {
+	// Input-specific and generic methods can be mixed, because everything returns *VNode.
+	got := render(Input().Placeholder("p").Class("c").Type("text").Id("x").Style("a", "b").Value("v").Attribute("k", "v"))
+	want := `<INPUT id="x" class="c" style="a:b;" value="v" k="v" placeholder="p" type="text"/>`
+	if got != want {
+		t.Fatalf("\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestFluentHelpers(t *testing.T) {
+	got := render(A().Href("/x").ClassIf("on", true).ClassIf("off", false).Textf("%d items", 3))
+	want := `<A class="on" href="/x">3 items</A>`
+	if got != want {
+		t.Fatalf("\n got %s\nwant %s", got, want)
+	}
+	if got := render(El("details").Body(El("summary").Text("s"))); got != `<DETAILS><SUMMARY>s</SUMMARY></DETAILS>` {
+		t.Fatalf("got %s", got)
+	}
+}
+
+// A function that returns INode can still be chained.
+func fluentCard() INode { return Div().Class("card") }
+
+func TestINodeReturnCanBeChained(t *testing.T) {
+	if got := render(fluentCard().Class("wide").Text("x")); got != `<DIV class="card wide">x</DIV>` {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestTextAreaBindValueSetsText(t *testing.T) {
+	s := Signal("hi")
+	if got := render(TextArea().BindValue(s)); got != `<TEXTAREA>hi</TEXTAREA>` {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestIfFnBuildsOnlyWhenTrue(t *testing.T) {
+	built := 0
+	build := func() INode { built++; return Span().Text("x") }
+
+	if IfFn(Value(false), build) != nil || built != 0 {
+		t.Fatalf("built=%d when the condition is false", built)
+	}
+	if got := IfFn(Value(true), build); got == nil || built != 1 {
+		t.Fatalf("built=%d when the condition is true", built)
+	}
+}
+
+func TestShowFnBuildsOnlyTheUsedPath(t *testing.T) {
+	a, b := 0, 0
+	buildA := func() INode { a++; return Span().Text("a") }
+	buildB := func() INode { b++; return Span().Text("b") }
+
+	if got := render(ShowFn(Value(true), buildA, buildB)); got != `<SPAN>a</SPAN>` || a != 1 || b != 0 {
+		t.Fatalf("got %s a=%d b=%d", got, a, b)
+	}
+	if got := render(ShowFn(Value(false), buildA, buildB)); got != `<SPAN>b</SPAN>` || a != 1 || b != 1 {
+		t.Fatalf("got %s a=%d b=%d", got, a, b)
+	}
+	if ShowFn(Value(false), buildA, nil) != nil {
+		t.Fatal("a nil else path must give nil")
+	}
+}
+
+func TestIfFnBindingStaysActive(t *testing.T) {
+	text := Signal("a")
+	var got INode
+	EffectFunc(func() {
+		got = IfFn(Value(true), func() INode { return Span().BindText(text) })
+	})
+	if got == nil || len(text.subscribers) != 1 {
+		t.Fatalf("subscribers=%d", len(text.subscribers))
+	}
+}

@@ -13,6 +13,7 @@ type stubNode struct{ INode }
 
 func (testEngine) Element(tag, namespace string) INode { return stubNode{} }
 func (testEngine) Fragment() INode                     { return stubNode{} }
+func (testEngine) Raw(string) INode                    { return stubNode{} }
 func (testEngine) OnMount(fn func())                   { fn() }
 func (testEngine) IsServer() bool                      { return false }
 func (testEngine) Tracks() bool                        { return true }

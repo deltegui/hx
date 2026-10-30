@@ -60,6 +60,12 @@ var tampers = map[string]func(string) string{
 	"empty": func(h string) string { return `` },
 	"attr":  func(h string) string { return strings.Replace(h, `placeholder="New todo"`, `placeholder="Old"`, 1) },
 	"id":    func(h string) string { return strings.Replace(h, `id="draft"`, `id="other"`, 1) },
+	// the markers of raw HTML are lost on the way (a proxy that drops comments)
+	"raw": func(h string) string {
+		return strings.NewReplacer("<!--hx-raw-->", "", "<!--/hx-raw-->", "").Replace(h)
+	},
+	// only the closing marker is lost
+	"rawend": func(h string) string { return strings.ReplaceAll(h, "<!--/hx-raw-->", "") },
 }
 
 func main() {

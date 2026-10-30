@@ -109,8 +109,12 @@ func App(initial State) hx.INode {
 				hx.TBody().Body(
 					hx.Tr().Body(hx.Th().Text("Item"), hx.Th().Text("Qty")),
 					hx.Tr().Body(hx.Td().Text("apples"), hx.Td().Text("3")),
+					// raw HTML: a <tr> only a template can parse
+					hx.Raw(`<tr><td>pears</td><td>5</td></tr>`),
 				),
 			),
+			// raw HTML with several roots and text: it is adopted as it is
+			hx.P().Id("raw").Body(hx.Raw(`<b id="raw-bold">raw</b> and <em>trusted</em> html`)),
 			hx.Svg().Attribute("viewBox", "0 0 10 10").Attribute("width", "40").Body(
 				hx.Path().Attribute("d", "M0 0 L10 0 L5 10 Z").Attribute("fill", "tomato"),
 			),

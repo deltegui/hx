@@ -26,7 +26,7 @@ There are three packages for this:
 |---|---|---|
 | `hx` | every platform | signals, effects, the `INode` interface and the constructors, `Each`/`If`/`EachKeyed`, `Action`, `Resource`, `OnMount`, `IsServer`, `StateScript`. No build tags, no `syscall/js` |
 | `hx/ssr` | every platform | the engine of the server: `ssr.Render`. No DOM code, no `syscall/js` |
-| `hx/wasm` | `GOOS=js GOARCH=wasm` (the nodes also build elsewhere, for tests) | the engine of the browser: `New`, `NewFromId`, `Hydrate`, `ReadState`, `EventOf`, `Underlying`, the DOM renderer |
+| `hx/wasm` | `GOOS=js GOARCH=wasm` (the nodes also build elsewhere, for tests) | the engine of the browser: `New`, `NewFromId`, `Hydrate`, `ReadState`, `EventOf`, `Key`, `PreventDefault`, `Underlying`, the DOM renderer |
 
 Requests (`hx/hxhttp`, `hx/hxjson`) build everywhere too, but only make a request in the browser.
 
@@ -38,7 +38,7 @@ On the server, `EventContext.Event` is `any` (there is no browser event), and `w
 
 ```
 myapp/
-  app/          the UI. Imports only hx. Must NOT import syscall/js or honnef.
+  app/          the UI. Imports only hx. Must NOT import syscall/js.
     app.go
   server/       main package for the server (builds natively). Imports hx/ssr.
     main.go
@@ -165,7 +165,7 @@ Some code only makes sense in the browser: timers, local storage, focusing an in
 
 ```go
 hx.OnMount(func() {
-	wasm.Underlying(input).Focus()
+	wasm.Underlying(input).Call("focus")
 })
 ```
 
@@ -206,7 +206,8 @@ The browser parses HTML with its own rules, and it can differ from what Hix wrot
 - **Tables.** The browser adds a `<tbody>` to `<table><tr>`. Write `Table().Body(TBody().Body(Tr()...))` yourself.
 - **Invalid nesting.** `<p>` cannot contain `<div>` or another `<p>`, `<a>` cannot contain `<a>`, a `<button>` cannot contain a `<button>`. The browser closes them early and the structure no longer matches.
 - **A newline at the start of `<textarea>` or `<pre>`** is dropped by the browser. Hix writes one extra newline in those cases, so the text matches.
-- **`<script>` and `<style>` content.** Text is escaped, which is wrong for code. Do not put code in those with `Text`.
+- **`<script>` and `<style>` content.** Text is escaped, which is wrong for code. Do not put code in those with `Text`: use [`hx.Raw`](building-the-ui.md#raw-html) for what you wrote yourself.
+- **`hx.Raw`.** It is written between the comments `<!--hx-raw-->` and `<!--/hx-raw-->`, and the browser adopts what is between them without looking at it. Do not remove those comments on the way (a proxy or a minifier that strips comments makes the browser rebuild that part and log a mismatch).
 - **Whitespace.** Hix writes none between elements. If you process or pretty-print the HTML, stray text nodes can appear.
 
 ## What to know

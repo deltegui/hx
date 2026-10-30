@@ -1,6 +1,6 @@
 # Recipes
 
-Complete examples you can copy. Each function returns a node, so mount it with `wasm.NewFromId("app").Body(recipe())`. All of them compile against the current API. The snippets leave out the imports: they use `fmt`, `github.com/deltegui/hx`, `github.com/deltegui/hx/wasm` and, in a few, `slices`, `strings`, `time`, `syscall/js` and `honnef.co/go/js/dom/v2`.
+Complete examples you can copy. Each function returns a node, so mount it with `wasm.NewFromId("app").Body(recipe())`. All of them compile against the current API. The snippets leave out the imports: they use `fmt`, `github.com/deltegui/hx`, `github.com/deltegui/hx/wasm` and, in a few, `slices`, `strings`, `time` and `syscall/js`.
 
 ## Counter
 
@@ -62,7 +62,7 @@ func todoList() hx.INode {
 	return hx.Div().Body(
 		hx.Input().Placeholder("New todo").BindValue(draft).BindOnInput(draft).
 			OnKeyUp(func(ctx hx.EventContext) {
-				if key, ok := ctx.Event.(*dom.KeyboardEvent); ok && key.Key() == "Enter" {
+				if wasm.Key(ctx) == "Enter" {
 					add(ctx)
 				}
 			}),
@@ -72,8 +72,6 @@ func todoList() hx.INode {
 	)
 }
 ```
-
-`dom` is `honnef.co/go/js/dom/v2`.
 
 ## Keyed list: rows that keep their state
 
@@ -274,7 +272,7 @@ func signup() hx.INode {
 	})
 
 	return hx.Form().OnSubmit(func(ctx hx.EventContext) {
-		wasm.EventOf(ctx).PreventDefault()
+		wasm.PreventDefault(ctx)
 		fmt.Println("signing up", email.Get())
 	}).Body(
 		hx.Input().Type("email").Placeholder("you@example.com").BindValue(email).BindOnInput(email),

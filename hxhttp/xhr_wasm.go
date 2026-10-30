@@ -10,8 +10,6 @@ import (
 	"strings"
 	"syscall/js"
 	"time"
-
-	"honnef.co/go/js/dom/v2"
 )
 
 // The requests use XMLHttpRequest instead of fetch because it is the only one
@@ -20,8 +18,8 @@ import (
 // underlying is the DOM element of a node. Only the nodes of the browser engine
 // have one.
 func underlying(node hx.INode) (js.Value, bool) {
-	if n, ok := node.(interface{ Underlying() dom.Element }); ok && n.Underlying() != nil {
-		return n.Underlying().Underlying(), true
+	if n, ok := node.(interface{ Underlying() js.Value }); ok && n.Underlying().Truthy() {
+		return n.Underlying(), true
 	}
 	return js.Null(), false
 }

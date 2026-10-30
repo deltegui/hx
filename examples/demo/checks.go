@@ -12,7 +12,6 @@ import (
 	"github.com/deltegui/hx"
 	"github.com/deltegui/hx/hxhttp"
 	"github.com/deltegui/hx/wasm"
-	"honnef.co/go/js/dom/v2"
 )
 
 // autoRunChecks is set when the page is opened with #checks-auto.
@@ -20,24 +19,35 @@ var autoRunChecks bool
 
 // sandbox is a throwaway mount point in the real DOM.
 type sandbox struct {
-	el   dom.Element
+	el   js.Value
 	root *wasm.VNode
 }
 
 func newSandbox() *sandbox {
-	doc := dom.GetWindow().Document()
-	el := doc.CreateElement("div")
-	doc.GetElementByID("sandbox").AppendChild(el)
+	doc := js.Global().Get("document")
+	el := doc.Call("createElement", "div")
+	doc.Call("getElementById", "sandbox").Call("appendChild", el)
 	return &sandbox{el: el, root: wasm.New(el)}
 }
 
-func (s *sandbox) html() string { return s.el.InnerHTML() }
+func (s *sandbox) html() string { return s.el.Get("innerHTML").String() }
 
-func (s *sandbox) click(selector string) {
-	s.el.QuerySelector(selector).Underlying().Call("click")
+// query is the first element of the sandbox that matches the selector.
+func (s *sandbox) query(selector string) js.Value { return s.el.Call("querySelector", selector) }
+
+// queryAll are the elements of the sandbox that match the selector.
+func (s *sandbox) queryAll(selector string) []js.Value {
+	found := s.el.Call("querySelectorAll", selector)
+	out := make([]js.Value, found.Length())
+	for i := range out {
+		out[i] = found.Index(i)
+	}
+	return out
 }
 
-func (s *sandbox) close() { s.el.ParentNode().RemoveChild(s.el) }
+func (s *sandbox) click(selector string) { s.query(selector).Call("click") }
+
+func (s *sandbox) close() { s.el.Get("parentNode").Call("removeChild", s.el) }
 
 func (s *sandbox) expect(want string) error {
 	if got := s.html(); got != want {
@@ -68,7 +78,7 @@ func (s *sandbox) countMutations() func() int {
 		count += args[0].Length()
 		return nil
 	}))
-	observer.Call("observe", s.el.Underlying(), map[string]any{"childList": true, "subtree": true})
+	observer.Call("observe", s.el, map[string]any{"childList": true, "subtree": true})
 	return func() int {
 		n := count
 		count = 0
@@ -388,8 +398,8 @@ func allChecks() []check {
 					return hx.Li().BindText(hx.Computed(func() string { return item.Get().name }))
 				})))
 			settle()
-			for _, li := range sb.el.QuerySelectorAll("li") {
-				li.Underlying().Set("marker", li.TextContent())
+			for _, li := range sb.queryAll("li") {
+				li.Set("marker", li.Get("textContent").String())
 			}
 			items.Set([]row{{3, "c"}, {1, "a"}, {4, "d"}, {2, "b"}})
 			settle()
@@ -397,8 +407,8 @@ func allChecks() []check {
 				return err
 			}
 			var kept []string
-			for _, li := range sb.el.QuerySelectorAll("li") {
-				marker := li.Underlying().Get("marker")
+			for _, li := range sb.queryAll("li") {
+				marker := li.Get("marker")
 				if marker.IsUndefined() {
 					kept = append(kept, "new")
 				} else {
@@ -417,13 +427,13 @@ func allChecks() []check {
 					return hx.Li().Body(hx.Input().Id(fmt.Sprint("in", id)))
 				})))
 			settle()
-			input := sb.el.QuerySelector("#in2").Underlying()
+			input := sb.query("#in2")
 			input.Set("value", "typed by the user")
 			input.Call("focus")
 			// add a row at the start and remove the first one
 			items.Set([]row{{4}, {2}, {3}})
 			settle()
-			same := sb.el.QuerySelector("#in2").Underlying()
+			same := sb.query("#in2")
 			return firstError(
 				eq("value", same.Get("value").String(), "typed by the user"),
 				eq("is the same element", same.Equal(input), true),
@@ -516,20 +526,17 @@ func allChecks() []check {
 			return firstError(eq("runs after dispose", runs, 2), eq("cleanups", cleanups, 1))
 		}},
 
-		{"inputs keep their specific dom type", func(sb *sandbox) error {
+		{"Underlying() is the DOM element of the node", func(sb *sandbox) error {
 			in := hx.Input()
 			sb.root.Body(in)
 			settle()
-			if _, ok := wasm.Underlying(in).(*dom.HTMLInputElement); !ok {
-				return fmt.Errorf("Underlying() is %T, want *dom.HTMLInputElement", wasm.Underlying(in))
-			}
-			return nil
+			return eq("Underlying() is the element", wasm.Underlying(in).Get("tagName").String(), "INPUT")
 		}},
 
 		{"SVG elements use the SVG namespace", func(sb *sandbox) error {
 			sb.root.Body(hx.Svg().Body(hx.Path()))
 			settle()
-			ns := sb.el.QuerySelector("path").Underlying().Get("namespaceURI").String()
+			ns := sb.query("path").Get("namespaceURI").String()
 			return eq("namespace", ns, "http://www.w3.org/2000/svg")
 		}},
 
@@ -539,12 +546,12 @@ func allChecks() []check {
 			t.BindValue(s)
 			sb.root.Body(t)
 			settle()
-			if err := eq("value", sb.el.QuerySelector("textarea").Underlying().Get("value").String(), "hello"); err != nil {
+			if err := eq("value", sb.query("textarea").Get("value").String(), "hello"); err != nil {
 				return err
 			}
 			s.Set("bye")
 			settle()
-			return eq("value", sb.el.QuerySelector("textarea").Underlying().Get("value").String(), "bye")
+			return eq("value", sb.query("textarea").Get("value").String(), "bye")
 		}},
 
 		{"select BindValue picks its option when it is created, and when the options change", func(sb *sandbox) error {
@@ -560,7 +567,7 @@ func allChecks() []check {
 			})
 			sb.root.Body(sel)
 			settle()
-			el := sb.el.QuerySelector("select").Underlying()
+			el := sb.query("select")
 			if err := eq("value at creation", el.Get("value").String(), "b"); err != nil {
 				return err
 			}
@@ -607,7 +614,7 @@ func allChecks() []check {
 			if err := eq("runs of the effect that reads both", runs, 1); err != nil {
 				return err
 			}
-			return eq("the DOM", sb.el.QuerySelector("#shown").TextContent()+" "+sb.el.QuerySelector("#counter").TextContent(), "3/20 2-5")
+			return eq("the DOM", sb.query("#shown").Get("textContent").String()+" "+sb.query("#counter").Get("textContent").String(), "3/20 2-5")
 		}},
 
 		{"Do inside an event handler fails with a clear error instead of stopping Go", func(sb *sandbox) error {
@@ -629,6 +636,62 @@ func allChecks() []check {
 			return eq("clicks handled after the error", clicks, 2)
 		}},
 
+		{"Raw puts its HTML between its siblings and leaves nothing when it goes", func(sb *sandbox) error {
+			show := hx.Signal(true)
+			sb.root.Body(hx.Div().Id("box").Body(
+				hx.P().Text("before"),
+				hx.Dynamic(func() hx.INode {
+					if show.Get() {
+						return hx.Raw("<b>x</b>text<i>y</i>")
+					}
+					return nil
+				}),
+				hx.P().Text("after")))
+			settle()
+			with := `<div id="box"><p>before</p><!--hx-raw--><b>x</b>text<i>y</i><!--/hx-raw--><p>after</p></div>`
+			if err := sb.expect(with); err != nil {
+				return err
+			}
+			show.Set(false)
+			settle()
+			if err := sb.expect(`<div id="box"><p>before</p><p>after</p></div>`); err != nil {
+				return err
+			}
+			show.Set(true)
+			settle()
+			return sb.expect(with)
+		}},
+
+		{"Raw can hold what only a template can parse (table rows)", func(sb *sandbox) error {
+			sb.root.Body(hx.Table().Body(hx.TBody().Body(hx.Raw("<tr><td>1</td></tr>"), hx.Raw("<tr><td>2</td></tr>"))))
+			settle()
+			return sb.expect(`<table><tbody><!--hx-raw--><tr><td>1</td></tr><!--/hx-raw--><!--hx-raw--><tr><td>2</td></tr><!--/hx-raw--></tbody></table>`)
+		}},
+
+		{"rows of Raw HTML move as a unit when the list is reordered", func(sb *sandbox) error {
+			ids := hx.Signal([]int{1, 2, 3})
+			sb.root.Body(hx.Ul().Body(hx.EachKeyed(ids, func(id int) int { return id },
+				func(id int, _ hx.Gettable[int], _ hx.Gettable[int]) hx.INode {
+					return hx.Raw(fmt.Sprintf("<li>%d</li><li>%d.</li>", id, id))
+				})))
+			settle()
+			want := func(order ...int) string {
+				out := "<ul>"
+				for _, id := range order {
+					out += fmt.Sprintf("<!--hx-raw--><li>%d</li><li>%d.</li><!--/hx-raw-->", id, id)
+				}
+				return out + "</ul>"
+			}
+			for _, order := range [][]int{{1, 2, 3}, {3, 2, 1}, {2, 3, 1}, {4, 2, 3, 1}, {1, 4}} {
+				ids.Set(order)
+				settle()
+				if err := sb.expect(want(order...)); err != nil {
+					return fmt.Errorf("order %v: %w", order, err)
+				}
+			}
+			return nil
+		}},
+
 		{"a binding to a signal and a handler of the same event both run", func(sb *sandbox) error {
 			text := hx.Signal("")
 			seen := []string{}
@@ -638,7 +701,7 @@ func allChecks() []check {
 			})
 			sb.root.Body(input)
 			settle()
-			el := sb.el.QuerySelector("input").Underlying()
+			el := sb.query("input")
 			for _, v := range []string{"a", "ab"} {
 				el.Set("value", v)
 				el.Call("dispatchEvent", js.Global().Get("Event").New("input", map[string]any{"bubbles": true}))
@@ -654,7 +717,7 @@ func allChecks() []check {
 			canvas := hx.Canvas()
 			canvas.OnRendered(func() {
 				calls++
-				connected = wasm.Underlying(canvas) != nil && wasm.Underlying(canvas).Underlying().Get("isConnected").Bool()
+				connected = wasm.Underlying(canvas).Truthy() && wasm.Underlying(canvas).Get("isConnected").Bool()
 			})
 			sb.root.Body(hx.Div().Body(canvas))
 			if err := eq("calls before the render", calls, 0); err != nil {
@@ -692,7 +755,7 @@ func allChecks() []check {
 			in := hx.Input().BindValue(s)
 			sb.root.Body(in)
 			settle()
-			el := sb.el.QuerySelector("input").Underlying()
+			el := sb.query("input")
 			el.Set("value", "typed without an input event")
 			s.Set("")
 			settle()
@@ -705,7 +768,7 @@ func allChecks() []check {
 			in.BindOnInput(s)
 			sb.root.Body(in)
 			settle()
-			input := sb.el.QuerySelector("input").Underlying()
+			input := sb.query("input")
 			input.Set("value", "typed")
 			input.Call("dispatchEvent", js.Global().Get("Event").New("input"))
 			settle()
@@ -758,7 +821,7 @@ func checksPage() hx.INode {
 			}
 			text := fmt.Sprintf("%d/%d checks passed", passed, len(list))
 			summary.Set(text)
-			dom.GetWindow().Document().QuerySelector("body").SetAttribute("data-checks", text)
+			js.Global().Get("document").Call("querySelector", "body").Call("setAttribute", "data-checks", text)
 		}()
 	}
 

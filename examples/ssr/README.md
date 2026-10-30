@@ -4,7 +4,7 @@ A Go server renders a page with Hix and sends plain HTML. The browser loads the 
 
 ```sh
 make serve      # builds the WASM and starts the server on http://localhost:8090
-make check      # 39 hydration checks in headless Chromium (Node 22+ and chromium)
+make check      # 47 hydration checks in headless Chromium (Node 22+ and chromium)
 ```
 
 Look at the page with `curl localhost:8090` to see the HTML the server writes.

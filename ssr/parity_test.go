@@ -37,6 +37,12 @@ func TestEnginesWriteTheSameHTML(t *testing.T) {
 		"fragments and nil": func() hx.INode {
 			return hx.Ul().Body(hx.Noop().Body(hx.Li().Text("1"), nil, hx.Li().Text("2")), nil, hx.Noop())
 		},
+		"raw html": func() hx.INode {
+			return hx.Div().Body(hx.P().Text("a"), hx.Raw("<b>x</b> and <i>y</i>"), hx.Raw(""), hx.Span().Text("z"))
+		},
+		"raw in a table and in a fragment": func() hx.INode {
+			return hx.Table().Body(hx.TBody().Body(hx.Noop().Body(hx.Raw("<tr><td>1</td></tr>")), hx.Raw("<tr><td>2</td></tr>")))
+		},
 		"svg": func() hx.INode {
 			return hx.Svg().Attribute("viewBox", "0 0 1 1").Body(hx.Path().Attribute("d", "M0 0"))
 		},

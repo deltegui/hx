@@ -27,7 +27,7 @@ root := wasm.NewFromId("app")          // <div id="app">
 root.Body(hx.H1().Text("Hi"))
 
 // or with a DOM element you already have
-root = wasm.New(someElement)
+root = wasm.New(someElement) // a js.Value
 ```
 
 You can mount several roots. They are independent.
@@ -104,7 +104,7 @@ hx.Button().Text("Save").OnClick(func(ctx hx.EventContext) {
 The handler receives an `EventContext`:
 
 - `ctx.Target` is the node (`hx.INode`) that has the listener.
-- `ctx.Event` is the browser event, and `nil` on a server. `wasm.EventOf(ctx)` gives it as a `dom.Event` from `honnef.co/go/js/dom/v2`, and a type assertion such as `ctx.Event.(*dom.KeyboardEvent)` gives a specific one.
+- `ctx.Event` is the browser event, and `nil` on a server. `wasm.EventOf(ctx)` gives it as a `js.Value`, so `wasm.EventOf(ctx).Get("target")` is the JavaScript `event.target`. `wasm.Key(ctx)` is the key of a keyboard event.
 
 Available helpers: `OnClick`, `OnInput`, `OnChange`, `OnKeyUp`, `OnKeyDown`, `OnSubmit`, `OnFocus`, `OnBlur`. For any other event use `On` with one of the `hx.Event*` constants (`EventDblClick`, `EventMouseEnter`, `EventMouseLeave`...) or your own `hx.Event("scroll")`:
 
@@ -118,17 +118,17 @@ Things to know:
 - Calling `On` again for the same event **replaces** the handler. A binding of the same event (`BindOnInput`, `BindOnChange`, `BindOnChecked`) is not replaced: it has its own place, and it runs first, so `Input().BindOnInput(name).OnInput(f)` writes the signal and then calls `f`, which already finds the new value in it.
 - Handlers run untracked: reading signals inside them never creates a dependency.
 - A handler runs in a [batch](reactivity.md#batching-several-changes-at-once): however many signals it sets, each effect that depends on them runs once, when it ends. A render is scheduled after every handler.
-- Read the event's value or key with the underlying event:
+- Read the key or the value of the event:
 
 ```go
 hx.Input().OnKeyUp(func(ctx hx.EventContext) {
-	if key, ok := ctx.Event.(*dom.KeyboardEvent); ok && key.Key() == "Enter" {
+	if wasm.Key(ctx) == "Enter" {
 		submit()
 	}
 })
 ```
 
-- `wasm.EventOf(ctx).PreventDefault()` and `StopPropagation()` are available. Use `OnSubmit` plus `PreventDefault` on forms so the page does not reload.
+- `wasm.PreventDefault(ctx)` and `wasm.StopPropagation(ctx)` are available. Use `OnSubmit` plus `PreventDefault` on forms so the page does not reload.
 
 ## Forms
 
@@ -189,9 +189,37 @@ hx.Ul().Body(
 
 A `Noop` ignores things that need an element (`Class`, `Style`, `Attribute`, `On`, `Text`).
 
+## Raw HTML
+
+`hx.Raw(html)` is HTML that is written **as it is**, with no escaping. Like `Noop` it has no element of its own: what it holds becomes siblings of the nodes around it.
+
+```go
+hx.Div().Class("prose").Body(
+	hx.H2().Text("Release notes"),
+	hx.Raw(notesAsHTML), // markdown that you rendered and sanitized
+)
+
+hx.Button().Body(hx.Raw(checkIconSVG), hx.Span().Text("Done"))
+hx.TBody().Body(hx.Raw("<tr><td>1</td></tr>")) // anything, even a row, goes where you put it
+```
+
+### URLs in attributes
+
+In `href`, `src`, `action`, `formaction`, `poster`, `cite`, `data`, `background`, `manifest` and `ping` (set with `Href`, `Src` or `Attribute`), a URL whose scheme is not `http`, `https`, `mailto` or `tel` (`javascript:`, `data:`, `vbscript:`...) is replaced by `hx.UnsafeURL` (`about:invalid#hx-unsafe-url`), in the server and in the browser. Relative URLs (`/a`, `?q=1`, `#x`) always pass, and so do tabs, line breaks and capitals that browsers ignore in a scheme (`" JavaScript:"` is caught). To allow another scheme call `hx.AllowURLScheme("whatsapp")` at startup. Not covered: `srcset`, `style` and `on*` attributes; do not fill those from user input.
+
+> **Raw is for HTML you trust.** Markup you wrote, or text that went through a sanitizer. **Never give it something a user typed**, or the page is open to script injection. `Text` escapes; `Raw` does not. `Href`, `Src` and the other attributes are not Raw, and they are checked (next section).
+
+- On a server the HTML goes between two comments, `<!--hx-raw-->` and `<!--/hx-raw-->`. They are valid anywhere (also inside a table) and they are how the browser finds where it ends.
+- When the browser hydrates the page it **adopts the HTML as it is and never touches it**. It does not compare it with the string, because the browser writes the same markup in its own way, so a difference inside raw HTML is not noticed. If the markers are missing or not closed, the parent is rebuilt by the browser and logs a mismatch, like any other difference.
+- A browser that creates a `Raw` itself (not hydrating) parses the HTML the way a `<template>` does, so a `<tr>` or a `<td>` is fine wherever you put it. A `<script>` inside it runs when the server's page loads, and does not when the browser creates it.
+- A `Raw` that moves (a list that is reordered) moves all its nodes as one. To change what it shows, build a new one, for example inside `hx.Dynamic`.
+- Attributes, classes, styles, events, text and children set on a `Raw` do nothing.
+
+Use it for what is not Hix: an icon, text that came out of a markdown renderer, the markup of another library. For anything that is yours, write a component.
+
 ## Reaching the DOM element
 
-After a node has been rendered, `wasm.Underlying(node)` returns its `dom.Element`. Inputs, textareas, selects, options, links, buttons, forms, images, labels, canvases, videos and audios give you the specific `honnef` type (for example `*dom.HTMLInputElement`). Other elements give a `*dom.BasicHTMLElement`.
+After a node has been rendered, `wasm.Underlying(node)` returns the DOM element as a `js.Value`: `wasm.Underlying(input).Get("value")`, `wasm.Underlying(form).Call("reset")`. Before it is rendered, and for a node of another engine, it is undefined (`IsUndefined()` is true).
 
 The node is not rendered when you create it: the renderer runs on the next animation frame. To use the element as soon as it exists, for example to hand a `<canvas>` to a chart library, ask for it with `OnRendered`:
 
@@ -200,7 +228,7 @@ canvas := hx.Canvas()
 var chart js.Value
 canvas.OnRendered(func() {
 	// the canvas is in the document here
-	chart = js.Global().Get("Chart").New(wasm.Underlying(canvas).Underlying(), config)
+	chart = js.Global().Get("Chart").New(wasm.Underlying(canvas), config)
 }).OnRemoved(func() {
 	chart.Call("destroy") // the node left the tree
 })

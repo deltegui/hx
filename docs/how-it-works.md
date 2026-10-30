@@ -69,7 +69,7 @@ Each node has at most one DOM listener per event type, with two slots: the bindi
 
 ## Speed notes
 
-- The Go DOM library `honnef.co/go/js/dom` identifies the type of every value it returns with dozens of JavaScript calls. Hix avoids it when creating and removing nodes and the text node (`wasm/domraw.go`), which made rendering 5,000 rows about 3x faster and removing them about 20x faster. Elements you are likely to need typed (inputs, textareas, selects, links, buttons, forms, images...) still come back with their specific type.
+- Hix talks to the DOM with `syscall/js` directly and has no other dependency. A Go DOM library that wraps every value it returns (it identifies each one with dozens of JavaScript calls) made rendering 5,000 rows about 3x slower and removing them about 20x slower, and it was a third of the code of a small program, so Hix dropped it: the DOM element is a `js.Value` (`wasm/domraw.go`).
 - Every property change is a single DOM call. Styles are written together in the `style` attribute.
 - `Each` rebuilds its rows when the list signal changes. Use `EachKeyed` to keep them (see [Dynamic UI](dynamic-ui.md#keeping-the-rows-eachkeyed)), or bind each row to its own signal.
 
@@ -87,7 +87,7 @@ Custom renderers are possible: implement `Renderer` (`ScheduleRender` and `Mark`
 
 ## Hydration
 
-`Hydrate` builds the node tree exactly as a normal render does, but instead of creating DOM elements it takes the ones the server wrote. The tree already says how many elements each node produces (a normal node one, a `Noop` the sum of its children), so the HTML needs no markers.
+`Hydrate` builds the node tree exactly as a normal render does, but instead of creating DOM elements it takes the ones the server wrote. The tree already says how many elements each node produces (a normal node one, a `Noop` the sum of its children), so the HTML needs no markers (but for `hx.Raw`, whose HTML has a number of nodes that the tree cannot know: it goes between two comments, and the hydration adopts the run between them as one slot).
 
 For each node, in order:
 

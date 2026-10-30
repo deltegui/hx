@@ -50,7 +50,7 @@ The package `hx` has the API a UI is written against. A program also imports one
 |---|---|
 | `hx/wasm` | The browser. Mounting and hydration (below). |
 | `hx/ssr` | A server. `ssr.Render(build)` and `ssr.Node(root)` write HTML. |
-| `Engine` | `interface{ Element(tag, namespace) INode; Fragment() INode; OnMount(fn); IsServer() bool; Tracks() bool }`. What an engine implements. |
+| `Engine` | `interface{ Element(tag, namespace) INode; Fragment() INode; Raw(html) INode; OnMount(fn); IsServer() bool; Tracks() bool }`. What an engine implements. |
 | `UseEngine(Engine)` | What an engine calls when it is imported. You only need it in a test; `wasm.Use()` and `ssr.Use()` do it for their engine. |
 
 On a server (`Tracks()` is false) a signal is a plain value, a `Computed` is calculated on every read, an effect runs once, and `CreateRoot`, `OnCleanup` and `Untrack` do nothing. See [Reactivity](reactivity.md#on-a-server).
@@ -59,12 +59,14 @@ On a server (`Tracks()` is false) a signal is a plain value, a `Computed` is cal
 
 | | |
 |---|---|
-| `wasm.New(element dom.Element) *wasm.VNode` | Mount on a DOM element. |
+| `wasm.New(element js.Value) *wasm.VNode` | Mount on a DOM element. |
 | `wasm.NewFromId(id string) *wasm.VNode` | Mount on the element with that id. |
 | `wasm.NewWithRenderer(element, renderer)` / `wasm.NewFromIdWithRenderer(id, renderer)` | Same with a custom `wasm.Renderer`. |
 | `wasm.NewWithoutMount(tag string, renderer Renderer) *wasm.VNode` | A node that is not in the DOM (for `wasm.StringRenderer`, in tests). |
-| `wasm.Underlying(node hx.INode) dom.Element` | The DOM element of a node, once rendered (`nil` before). |
-| `wasm.EventOf(ctx hx.EventContext) dom.Event` | The event of the browser that a handler received. |
+| `wasm.Underlying(node hx.INode) js.Value` | The DOM element of a node, once rendered (undefined before). |
+| `wasm.EventOf(ctx hx.EventContext) js.Value` | The event of the browser that a handler received. |
+| `wasm.Key(ctx hx.EventContext) string` | The key of a keyboard event. |
+| `wasm.PreventDefault(ctx)`, `wasm.StopPropagation(ctx)` | What the names say, on the event of a handler. |
 
 ## Elements
 
@@ -76,6 +78,7 @@ All return `INode`.
 |---|---|
 | `El(tag string) INode` | Any tag. |
 | `Noop() INode` | A fragment: renders its children, no element. |
+| `Raw(html string) INode` | HTML written as it is, with no escaping, and no element of its own. **For trusted HTML only.** See [Raw HTML](building-the-ui.md#raw-html). |
 | `Svg()`, `Path()` | Created in the SVG namespace. |
 
 ## INode methods
@@ -116,7 +119,7 @@ All of them return `INode`, so they can be chained in any order, except the ones
 
 Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSubmit EventFocus EventBlur EventDblClick EventMouseEnter EventMouseLeave`. `Event` is a string, so `hx.Event("scroll")` works.
 
-`EventContext` has two fields: `Target INode` and `Event any`, the event of the browser (`nil` on a server). In browser code `wasm.EventOf(ctx)` returns it as a `dom.Event`.
+`EventContext` has two fields: `Target INode` and `Event any`, the event of the browser (`nil` on a server). In browser code `wasm.EventOf(ctx)` returns it as a `js.Value`.
 
 ### Bindings and effects
 
@@ -160,7 +163,7 @@ Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSub
 | `OnMount(fn func())` | Runs `fn` only in the browser, after hydration. Ignored on the server. |
 | `IsServer() bool` | `true` on the server, `false` in the browser. |
 | `wasm.Hydrate(id string, build func() INode) (dispose func())` | Adopts the server's HTML in the element with that id. Browser only. |
-| `wasm.HydrateElement(mount dom.Element, build) (dispose func())` | Same for an element you have. Browser only. |
+| `wasm.HydrateElement(mount js.Value, build) (dispose func())` | Same for an element you have. Browser only. |
 | `wasm.ReadState(id string) string` | The text of the element with that id (what `StateScript` wrote). Browser only. |
 
 ## Requests
@@ -219,3 +222,5 @@ JSON, in its own package so programs that do not use it do not carry `encoding/j
 | `wasm.Renderer` | `interface{ ScheduleRender(); Mark(*VNode) }`. |
 | `wasm.DiffRenderer` | The DOM renderer used by `wasm.New` and `wasm.NewFromId`. Batches changes per animation frame. |
 | `wasm.StringRenderer` | Writes the HTML of a `wasm.VNode`. For tests. A server uses `ssr.Render`. |
+
+- `hx.SafeAttribute(key, value)`, `hx.UnsafeURL`, `hx.AllowURLScheme(scheme)`: URL attributes (`href`, `src`, `action`...) only keep `http`, `https`, `mailto`, `tel` and relative URLs; anything else becomes `UnsafeURL`. Both engines apply it.

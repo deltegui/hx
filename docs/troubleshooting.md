@@ -70,7 +70,7 @@ A `Noop` has no element of its own, so there is nothing to style. Put a real ele
 
 ## I need the DOM element
 
-Use `wasm.Underlying(node)` after the node has been rendered. Before that it is `nil`.
+Use `wasm.Underlying(node)` after the node has been rendered. Before that it is undefined (`IsUndefined()` is true).
 
 ## `hxhttp: Do waits for the answer and cannot do that inside an event handler`
 
@@ -112,4 +112,4 @@ A form with files needs `enctype="multipart/form-data"`. `hxhttp.FormOf` sends i
 - **Only a few element constructors.** Use `El("tag")` for the rest. SVG shapes other than `Svg` and `Path` need their own namespace and do not have constructors yet.
 - **Events.** Helpers exist for the common ones; use `On` with `hx.Event("name")` for any other. They do nothing on a server.
 - **Server rendering does not stream, and does not wait for data.** `ssr.Render` writes the whole page from what you give it; load the data first and pass it in.
-- **`wasm.Underlying` type.** Inputs, textareas, selects, options, links, buttons, forms, images, labels, canvases, videos and audios return their specific `honnef` type. Other elements return `*dom.BasicHTMLElement`.
+- **`wasm.Underlying` and `wasm.EventOf` are `js.Value`.** Hix has no dependency to wrap the DOM: you call it as JavaScript does (`Get`, `Set`, `Call`).

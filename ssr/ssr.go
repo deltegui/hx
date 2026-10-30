@@ -30,6 +30,7 @@ type engine struct{}
 
 func (engine) Element(tag, namespace string) hx.INode { return &node{tag: tag, namespace: namespace} }
 func (engine) Fragment() hx.INode                     { return &node{fragment: true} }
+func (engine) Raw(html string) hx.INode               { return &node{raw: true, html: html} }
 func (engine) OnMount(func())                         {}
 func (engine) IsServer() bool                         { return true }
 func (engine) Tracks() bool                           { return false }

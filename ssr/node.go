@@ -22,6 +22,8 @@ var voidElements = map[string]bool{
 type node struct {
 	tag, namespace string
 	fragment       bool
+	raw            bool   // HTML that is written as it is
+	html           string // what a raw node holds
 	id, text       string
 	value          string
 	checked        bool
@@ -71,7 +73,7 @@ func (n *node) Attribute(key, value string) hx.INode {
 	if n.attributes == nil {
 		n.attributes = map[string]string{}
 	}
-	n.attributes[key] = value
+	n.attributes[key] = hx.SafeAttribute(key, value)
 	return n
 }
 
@@ -186,7 +188,20 @@ func (n *node) BindWith(run, stop func())  { run() }
 
 func (w *writer) node(root hx.INode) { w.element(asNode(root)) }
 
+// The markers around raw HTML. The browser uses them to find where it ends when
+// it hydrates the page (see wasm/hydrate.go).
+const (
+	rawStart = "<!--hx-raw-->"
+	rawEnd   = "<!--/hx-raw-->"
+)
+
 func (w *writer) element(n *node) {
+	if n.raw {
+		w.WriteString(rawStart)
+		w.WriteString(n.html)
+		w.WriteString(rawEnd)
+		return
+	}
 	if n.fragment {
 		w.children(n)
 		return

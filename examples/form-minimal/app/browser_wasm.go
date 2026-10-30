@@ -8,4 +8,4 @@ import (
 )
 
 // preventDefault stops the browser from sending the form by itself.
-func preventDefault(ctx hx.EventContext) { wasm.EventOf(ctx).PreventDefault() }
+func preventDefault(ctx hx.EventContext) { wasm.PreventDefault(ctx) }

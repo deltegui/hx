@@ -21,13 +21,13 @@ The core is about 1.2K lines (comments included). The browser engine is about 1.
 
 * **Render on the server and hydrate in the browser.** A Go backend writes plain HTML from the same UI code, and the WASM adopts it without touching the DOM.
 
-Hix only depends on *honnef.co/go/js/dom/v2*.
+Hix has no dependencies: only the standard library (`syscall/js` in the browser).
 
 Hix doesn’t try to be a full-fledged framework — it’s just a library for writing reactive web interfaces in Go.
 
 If you need a full framework to build PWAs or complex applications, try go-app.
 
-**[Live demo](https://deltegui.github.io/hx/)** — the code is in [`examples/demo`](examples/demo): a tab per feature and 36 checks that run against the real DOM, in your browser (about 298K of WASM over the network, built with TinyGo).
+**[Live demo](https://deltegui.github.io/hx/)** — the code is in [`examples/demo`](examples/demo): a tab per feature and 39 checks that run against the real DOM, in your browser (about 319K of WASM over the network, built with TinyGo).
 
 ## A taste
 
@@ -142,13 +142,13 @@ Thanks to TinyGo and Hix simplicity, the example shown above ("A taste") can ach
 
 | Compiled                  | Command                                                                   | Size |
 |---------------------------|---------------------------------------------------------------------------|------|
-| Go full                   | `GOOS=js GOARCH=wasm go build -o main.wasm main.go`                       | 4.5M |
-| TinyGo                    | `GOOS=js GOARCH=wasm tinygo build -o main.wasm main.go `                  | 1.7M |
-| Optimized TinyGo          | `GOOS=js GOARCH=wasm tinygo build --no-debug -opt=z -o main.wasm main.go` | 567K |
-| Optimized TinyGo + GZip   | `gzip -k -9 main.wasm`                                                    | 158K |
-| Optimized TinyGo + brotli | `brotli -f -q 11 main.wasm`                                               | 116K |
+| Go full                   | `GOOS=js GOARCH=wasm go build -o main.wasm main.go`                       | 2.9M |
+| TinyGo                    | `GOOS=js GOARCH=wasm tinygo build -o main.wasm main.go `                  | 958K |
+| Optimized TinyGo          | `GOOS=js GOARCH=wasm tinygo build --no-debug -opt=z -o main.wasm main.go` | 292K |
+| Optimized TinyGo + GZip   | `gzip -k -9 main.wasm`                                                    | 110K |
+| Optimized TinyGo + brotli | `brotli -f -q 11 main.wasm`                                               | 90K  |
 
-Measured with Go 1.27.3 and TinyGo 0.43.0. For a bigger program, the [live demo](https://deltegui.github.io/hx/) ([`examples/demo`](examples/demo), every feature, 36 checks) is 6.5M with Go and 1.2M with optimized TinyGo (298K gzip, 206K brotli). Both builds pass the 36 checks in Chromium.
+Measured with Go 1.27.3 and TinyGo 0.43.0. For a bigger program, the [live demo](https://deltegui.github.io/hx/) ([`examples/demo`](examples/demo), every feature, 39 checks) is 4.2M with Go and 757K with optimized TinyGo (233K gzip, 179K brotli). Both builds pass the 39 checks in Chromium.
 
 ## Status
 
@@ -161,7 +161,7 @@ go test -race ./...                                                         # th
 GOOS=js GOARCH=wasm go test -exec "$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./...   # also in WASM (needs Node.js)
 ```
 
-The DOM code is checked in a real browser: [`examples/demo`](examples/demo) has 36 checks, [`examples/ssr`](examples/ssr) (`make check`) checks the hydration, and [`examples/forms`](examples/forms) (`make check`) checks the forms with JavaScript off and on. A test also checks that the two engines write the same HTML for the same UI, which is what hydration needs.
+The DOM code is checked in a real browser: [`examples/demo`](examples/demo) has 39 checks, [`examples/ssr`](examples/ssr) (`make check`) checks the hydration, and [`examples/forms`](examples/forms) (`make check`) checks the forms with JavaScript off and on. A test also checks that the two engines write the same HTML for the same UI, which is what hydration needs.
 
 ## Why Hix?
 

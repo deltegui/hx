@@ -65,7 +65,7 @@ const INTERACT = `(async () => {
     [...n.childNodes].map(canon).join("") + "</" + n.nodeName.toLowerCase() + ">";
   out.html = canon(document.getElementById("app"));
   out.listAtStart = items();
-  const adopted = [$("#inc"), $("#draft"), $("#count")];
+  const adopted = [$("#inc"), $("#draft"), $("#count"), $("#raw-bold")];
   adopted.forEach((e, i) => (e.__mark = i));
   $("#inc").click(); $("#inc").click(); await w();
   out.count = $("#count").textContent;
@@ -127,6 +127,7 @@ const expectedHtml = r.html;
 const broken = {
   class: "a missing class", attr: "a different attribute", id: "a different id",
   text: "different text", tag: "a different tag", count: "a missing item", empty: "no HTML at all",
+  raw: "no markers around raw HTML", rawend: "no closing marker of raw HTML",
 };
 for (const [variant, what] of Object.entries(broken)) {
   console.log(`--- ${what} (break=${variant})`);

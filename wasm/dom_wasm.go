@@ -3,10 +3,9 @@
 package wasm
 
 import (
-	"github.com/deltegui/hx"
 	"syscall/js"
 
-	"honnef.co/go/js/dom/v2"
+	"github.com/deltegui/hx"
 )
 
 // What follows is the part of the library that exists only in the browser.
@@ -15,9 +14,36 @@ import (
 
 // domState is the DOM side of a node.
 type domState struct {
-	domElement     dom.Element
+	domElement     js.Value // the DOM element, once it exists (see haveDomElement)
 	haveDomElement bool
 	textNode       js.Value
+	// The markers of a raw node, once its HTML is in the DOM (or in a fragment,
+	// before it is placed). Undefined until then.
+	rawStart, rawEnd js.Value
+}
+
+// hasDom tells if the node has something in the DOM that its owner has to place:
+// an element, or the nodes of a raw node.
+func (element *VNode) hasDom() bool {
+	return element.haveDomElement || (element.tag == rawIdNode && !element.rawStart.IsUndefined())
+}
+
+// anchor is the DOM node that stands for the node when its owner puts its
+// children in order: its element, or the first marker of a raw node.
+func (element *VNode) anchor() js.Value {
+	if element.tag == rawIdNode {
+		return element.rawStart
+	}
+	return element.domElement
+}
+
+// moveBefore puts everything the node has in the DOM inside parent, before next.
+func (element *VNode) moveBefore(parent, next js.Value) {
+	if element.tag == rawIdNode {
+		moveRawRange(element.rawStart, element.rawEnd, parent, next)
+		return
+	}
+	parent.Call("insertBefore", element.domElement, next)
 }
 
 // domListener is the DOM side of an event listener.
@@ -28,8 +54,8 @@ type domListener struct {
 func isServer() bool { return false }
 
 // NewWithRenderer mounts a node on an existing DOM element with a custom Renderer.
-func NewWithRenderer(element dom.Element, renderer Renderer) *VNode {
-	VNode := newVNode(element.NodeName())
+func NewWithRenderer(element js.Value, renderer Renderer) *VNode {
+	VNode := newVNode(element.Get("nodeName").String())
 	VNode.status = unchanged
 	VNode.domElement = element
 	VNode.haveDomElement = true
@@ -39,34 +65,49 @@ func NewWithRenderer(element dom.Element, renderer Renderer) *VNode {
 }
 
 // New mounts a node on an existing DOM element. Its children are rendered inside the element.
-func New(element dom.Element) *VNode {
+func New(element js.Value) *VNode {
 	return NewWithRenderer(element, newRenderer(element))
 }
 
-// NewFromId mounts a node on the DOM element with that id.
+// elementByID is the element with that id, or an undefined value if the page has none.
+func elementByID(id string) js.Value {
+	element := rawDocument().Call("getElementById", id)
+	if element.IsNull() {
+		return js.Undefined()
+	}
+	return element
+}
+
+// NewFromId mounts a node on the DOM element with that id. It panics if the page has none.
 func NewFromId(id string) *VNode {
-	mountPoint := dom.GetWindow().Document().GetElementByID(id)
-	return New(mountPoint)
+	return New(mustElementByID(id))
 }
 
 // NewFromIdWithRenderer is NewFromId with a custom Renderer.
 func NewFromIdWithRenderer(id string, renderer Renderer) *VNode {
-	mountPoint := dom.GetWindow().Document().GetElementByID(id)
-	return NewWithRenderer(mountPoint, renderer)
+	return NewWithRenderer(mustElementByID(id), renderer)
 }
 
-// Underlying returns the DOM element, once it has been rendered.
-// Input, textarea, select, option, a, button, form, img, label, canvas, video and audio nodes keep honnef's specific type (for example *dom.HTMLInputElement). Other nodes are a *dom.BasicHTMLElement.
-func (element *VNode) Underlying() dom.Element {
+func mustElementByID(id string) js.Value {
+	element := elementByID(id)
+	if element.IsUndefined() {
+		panic("hx: there is no element with id " + id)
+	}
+	return element
+}
+
+// Underlying returns the DOM element, once it has been rendered, as a js.Value.
+// Before that it is undefined (IsUndefined is true).
+func (element *VNode) Underlying() js.Value {
 	return element.domElement
 }
 
 func targetValue(ctx hx.EventContext) string {
-	return EventOf(ctx).Target().Underlying().Get("value").String()
+	return EventOf(ctx).Get("target").Get("value").String()
 }
 
 func targetChecked(ctx hx.EventContext) bool {
-	return EventOf(ctx).Target().Underlying().Get("checked").Truthy()
+	return EventOf(ctx).Get("target").Get("checked").Truthy()
 }
 
 // queueRendered asks the renderer to run the OnRendered functions of the node
@@ -82,19 +123,47 @@ func (element *VNode) queueRendered() {
 	}
 }
 
-// Underlying returns the DOM element of a node, once it has been rendered, and
-// nil before that. Input, textarea, select, option, a, button, form, img, label,
-// canvas, video and audio nodes keep honnef's specific type (for example
-// *dom.HTMLInputElement). Other nodes are a *dom.BasicHTMLElement.
-func Underlying(node hx.INode) dom.Element {
+// Underlying returns the DOM element of a node as a js.Value, once it has been
+// rendered. Before that, and for a node of another engine, it is undefined
+// (IsUndefined is true).
+func Underlying(node hx.INode) js.Value {
 	if v, ok := node.(*VNode); ok {
 		return v.domElement
 	}
-	return nil
+	return js.Undefined()
 }
 
-// EventOf returns the event of the browser that a handler received.
-func EventOf(ctx hx.EventContext) dom.Event {
-	event, _ := ctx.Event.(dom.Event)
-	return event
+// EventOf returns the event of the browser that a handler received, as a js.Value.
+// It is undefined if the handler did not come from the browser.
+func EventOf(ctx hx.EventContext) js.Value {
+	if event, ok := ctx.Event.(js.Value); ok {
+		return event
+	}
+	return js.Undefined()
+}
+
+// Key is the key of a keyboard event ("Enter", "a", "ArrowDown"...), or an empty
+// string if the event has none.
+func Key(ctx hx.EventContext) string {
+	if event := EventOf(ctx); !event.IsUndefined() {
+		if key := event.Get("key"); key.Type() == js.TypeString {
+			return key.String()
+		}
+	}
+	return ""
+}
+
+// PreventDefault stops the browser from doing what it does by itself with the
+// event, for example sending a form.
+func PreventDefault(ctx hx.EventContext) {
+	if event := EventOf(ctx); !event.IsUndefined() {
+		event.Call("preventDefault")
+	}
+}
+
+// StopPropagation stops the event from reaching the elements around the one that has the listener.
+func StopPropagation(ctx hx.EventContext) {
+	if event := EventOf(ctx); !event.IsUndefined() {
+		event.Call("stopPropagation")
+	}
 }

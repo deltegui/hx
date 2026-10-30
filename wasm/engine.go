@@ -41,6 +41,12 @@ func (engine) Element(tag, namespace string) hx.INode {
 
 func (engine) Fragment() hx.INode { return newVNode(noopIdNode) }
 
+func (engine) Raw(html string) hx.INode {
+	n := newVNode(rawIdNode)
+	n.rawHTML = html
+	return n
+}
+
 func (engine) OnMount(fn func()) {
 	if currentMountMode == mountCollect {
 		mountQueue = append(mountQueue, fn)

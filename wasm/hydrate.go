@@ -8,8 +8,6 @@ import (
 	"log"
 	"strings"
 	"syscall/js"
-
-	"honnef.co/go/js/dom/v2"
 )
 
 // Hydrate brings to life a page whose HTML was written by RenderToString.
@@ -29,8 +27,8 @@ import (
 // Hydrate creates a root for the UI. The returned function stops everything
 // that the UI started.
 func Hydrate(id string, build func() hx.INode) (dispose func()) {
-	mount := dom.GetWindow().Document().GetElementByID(id)
-	if mount == nil {
+	mount := elementByID(id)
+	if mount.IsUndefined() {
 		log.Printf("hx: Hydrate: there is no element with id %q", id)
 		return func() {}
 	}
@@ -38,7 +36,7 @@ func Hydrate(id string, build func() hx.INode) (dispose func()) {
 }
 
 // HydrateElement is Hydrate for an element you already have.
-func HydrateElement(mount dom.Element, build func() hx.INode) (dispose func()) {
+func HydrateElement(mount js.Value, build func() hx.INode) (dispose func()) {
 	previousMode := currentMountMode
 	currentMountMode = mountCollect
 	mountQueue = nil
@@ -71,11 +69,11 @@ func HydrateElement(mount dom.Element, build func() hx.INode) (dispose func()) {
 // ReadState returns the text of the element with that id, or an empty string.
 // It reads what the server wrote with StateScript.
 func ReadState(id string) string {
-	element := dom.GetWindow().Document().GetElementByID(id)
-	if element == nil {
+	element := elementByID(id)
+	if element.IsUndefined() {
 		return ""
 	}
-	return element.TextContent()
+	return element.Get("textContent").String()
 }
 
 type hydrator struct {
@@ -113,17 +111,19 @@ func topNodes(owner *VNode, tops []*VNode) []*VNode {
 // adoptChildren pairs the children of owner with the child elements of its DOM
 // element, one by one. It returns true if some part had to be rendered again.
 func (h *hydrator) adoptChildren(owner *VNode) (rebuilt bool) {
-	raw := owner.domElement.Underlying()
+	raw := owner.domElement
 	h.adoptText(owner, raw)
 
 	tops := topNodes(owner, nil)
-	kids := raw.Get("children")
-	count := kids.Length()
-	if len(tops) != count {
-		h.warn(owner, fmt.Sprintf("the page has %d child elements and the UI has %d", count, len(tops)))
-		for i := count - 1; i >= 0; i-- {
-			removeRaw(kids.Index(i))
+	kids, closed := slots(raw)
+	count := len(kids)
+	if !closed || len(tops) != count {
+		if !closed {
+			h.warn(owner, "the raw HTML in the page is not closed")
+		} else {
+			h.warn(owner, fmt.Sprintf("the page has %d child elements and the UI has %d", count, len(tops)))
 		}
+		clearChildren(raw, owner.textNode)
 		for _, top := range tops {
 			h.resetFresh(top)
 		}
@@ -133,11 +133,75 @@ func (h *hydrator) adoptChildren(owner *VNode) (rebuilt bool) {
 		return true
 	}
 	for i, top := range tops {
-		if !h.adoptNode(top, kids.Index(i)) {
+		if !h.adoptNode(top, kids[i]) {
 			rebuilt = true
 		}
 	}
 	return rebuilt
+}
+
+// isRawMarker tells if a DOM node is the comment that opens (or closes) raw HTML.
+func isRawMarker(node js.Value, text string) bool {
+	return node.Get("nodeType").Int() == 8 && node.Get("data").String() == text
+}
+
+// clearChildren removes everything inside an element except keep, which is its
+// own text node if it has taken one. It leaves the element ready to be filled
+// again, with no stray text from raw HTML whose markers are not trusted.
+func clearChildren(raw, keep js.Value) {
+	for node := raw.Get("firstChild"); !node.IsNull(); {
+		next := node.Get("nextSibling")
+		if keep.IsUndefined() || keep.IsNull() || !node.Equal(keep) {
+			raw.Call("removeChild", node)
+		}
+		node = next
+	}
+}
+
+// slots lists what the server put inside an element, one per node of the tree
+// that has something in the DOM: each child element, and each run of raw HTML,
+// which the comment that opens it stands for. Text and other comments are not
+// counted, as before. closed is false if a run of raw HTML is never closed.
+func slots(raw js.Value) (found []js.Value, closed bool) {
+	found = []js.Value{}
+	for node := raw.Get("firstChild"); !node.IsNull(); node = node.Get("nextSibling") {
+		switch node.Get("nodeType").Int() {
+		case 1:
+			found = append(found, node)
+		case 8:
+			if isRawMarker(node, rawStartMarker) {
+				found = append(found, node)
+				for !node.IsNull() && !isRawMarker(node, rawEndMarker) {
+					node = node.Get("nextSibling")
+				}
+				if node.IsNull() {
+					return found, false
+				}
+			}
+		}
+	}
+	return found, true
+}
+
+// rawEndOf finds the comment that closes the raw HTML that start opens, or
+// null if the page does not have it.
+func rawEndOf(start js.Value) js.Value {
+	node := start
+	for !node.IsNull() && !isRawMarker(node, rawEndMarker) {
+		node = node.Get("nextSibling")
+	}
+	return node
+}
+
+// removeSlot removes a slot: an element, or a whole run of raw HTML.
+func removeSlot(slot js.Value) {
+	if slot.Get("nodeType").Int() == 8 {
+		if end := rawEndOf(slot); !end.IsNull() {
+			removeRawRange(slot, end)
+			return
+		}
+	}
+	removeRaw(slot)
 }
 
 func removeRaw(raw js.Value) {
@@ -174,9 +238,12 @@ func (h *hydrator) adoptText(owner *VNode, raw js.Value) {
 // adoptNode makes node take the element raw. If they do not match, the element
 // is removed and node is left to be rendered by the browser, and it returns false.
 func (h *hydrator) adoptNode(node *VNode, raw js.Value) bool {
+	if node.tag == rawIdNode {
+		return h.adoptRaw(node, raw)
+	}
 	if name := raw.Get("nodeName").String(); !strings.EqualFold(name, node.tag) {
 		h.warn(node, fmt.Sprintf("the page has <%s>", strings.ToLower(name)))
-		removeRaw(raw)
+		removeSlot(raw)
 		h.resetFresh(node)
 		if owner := domParentOf(node); owner != nil {
 			owner.setDirty(flagChildren)
@@ -184,7 +251,7 @@ func (h *hydrator) adoptNode(node *VNode, raw js.Value) bool {
 		return false
 	}
 
-	node.domElement = wrapExisting(raw, node.tag, node.namespace)
+	node.domElement = raw
 	node.haveDomElement = true
 	node.status = unchanged
 	if differences := node.commit(raw); len(differences) > 0 {
@@ -193,6 +260,28 @@ func (h *hydrator) adoptNode(node *VNode, raw js.Value) bool {
 
 	rebuilt := h.adoptChildren(node)
 	h.finish(node, rebuilt)
+	return true
+}
+
+// adoptRaw makes a raw node take the run of HTML that starts at the comment
+// start. What is inside is not looked at: it is trusted, and the browser cannot
+// compare it with the string, since it writes the same markup in its own way.
+func (h *hydrator) adoptRaw(node *VNode, start js.Value) bool {
+	end := js.Null()
+	if isRawMarker(start, rawStartMarker) {
+		end = rawEndOf(start)
+	}
+	if end.IsNull() {
+		h.warn(node, "the page has no raw HTML where the UI has some")
+		removeSlot(start)
+		h.resetFresh(node)
+		if owner := domParentOf(node); owner != nil {
+			owner.setDirty(flagChildren)
+		}
+		return false
+	}
+	node.rawStart, node.rawEnd = start, end
+	node.status = unchanged
 	return true
 }
 
@@ -264,9 +353,10 @@ func (h *hydrator) finish(node *VNode, rebuilt bool) {
 // been created, so the renderer creates its DOM elements.
 func (h *hydrator) resetFresh(node *VNode) {
 	node.status = changeNew
-	node.domElement = nil
+	node.domElement = js.Undefined()
 	node.haveDomElement = false
 	node.textNode = js.Undefined()
+	node.rawStart, node.rawEnd = js.Undefined(), js.Undefined()
 
 	pending := func(v diffValue[string]) diffValue[string] {
 		if v.nextValue == "" {

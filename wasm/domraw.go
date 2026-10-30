@@ -2,73 +2,71 @@
 
 package wasm
 
-import (
-	"strings"
-	"syscall/js"
-
-	"honnef.co/go/js/dom/v2"
-)
-
-// honnef.co/go/js/dom wraps every DOM value it returns by comparing its
-// constructor with dozens of globals, which costs many Go <-> JS calls per
-// element. The functions in this file talk to the DOM directly on the hot
-// paths (creating and removing nodes), which is more than 10x faster.
-
-// typedTags are created through honnef so Underlying() returns the specific
-// type (for example *dom.HTMLInputElement) that callers may want to assert.
-var typedTags = map[string]bool{
-	"A": true, "AUDIO": true, "BUTTON": true, "CANVAS": true, "FORM": true,
-	"IMG": true, "INPUT": true, "LABEL": true, "OPTION": true, "SELECT": true,
-	"TEXTAREA": true, "VIDEO": true,
-}
-
-var documentWrapper dom.Document
-
-func domDocument() dom.Document {
-	if documentWrapper == nil {
-		documentWrapper = dom.GetWindow().Document()
-	}
-	return documentWrapper
-}
+import "syscall/js"
 
 func rawDocument() js.Value { return js.Global().Get("document") }
 
-func newDomElement(tag, namespace string) dom.Element {
+func newDomElement(tag, namespace string) js.Value {
 	if namespace != "" {
-		raw := rawDocument().Call("createElementNS", namespace, tag)
-		return &dom.BasicElement{BasicNode: &dom.BasicNode{Value: raw}}
+		return rawDocument().Call("createElementNS", namespace, tag)
 	}
-	if typedTags[tag] {
-		return domDocument().CreateElement(tag)
-	}
-	raw := rawDocument().Call("createElement", tag)
-	return &dom.BasicHTMLElement{BasicElement: &dom.BasicElement{BasicNode: &dom.BasicNode{Value: raw}}}
-}
-
-// wrapExisting wraps a DOM element that already exists (the page was rendered by a server).
-// It gives the same type newDomElement would have given.
-func wrapExisting(raw js.Value, tag, namespace string) dom.Element {
-	if namespace != "" {
-		return &dom.BasicElement{BasicNode: &dom.BasicNode{Value: raw}}
-	}
-	if typedTags[strings.ToUpper(tag)] {
-		return dom.WrapElement(raw)
-	}
-	return &dom.BasicHTMLElement{BasicElement: &dom.BasicElement{BasicNode: &dom.BasicNode{Value: raw}}}
+	return rawDocument().Call("createElement", tag)
 }
 
 // removeFromParent removes the element from its parent, if it has one.
-func removeFromParent(element dom.Element) {
-	raw := element.Underlying()
-	if parent := raw.Get("parentNode"); !parent.IsNull() {
-		parent.Call("removeChild", raw)
+func removeFromParent(element js.Value) {
+	if parent := element.Get("parentNode"); !parent.IsNull() {
+		parent.Call("removeChild", element)
 	}
 }
 
 // prependText inserts a new text node as the first child of element and returns it.
-func prependText(element dom.Element, text string) js.Value {
-	parent := element.Underlying()
+func prependText(element js.Value, text string) js.Value {
 	node := rawDocument().Call("createTextNode", text)
-	parent.Call("insertBefore", node, parent.Get("firstChild"))
+	element.Call("insertBefore", node, element.Get("firstChild"))
 	return node
+}
+
+// newRawRange parses html the way a <template> does, which accepts any markup
+// wherever it goes (a <tr> is fine), and returns the two comment markers around
+// the nodes. The markers and the nodes are in a fragment until they are placed.
+func newRawRange(html string) (start, end js.Value) {
+	doc := rawDocument()
+	template := doc.Call("createElement", "template")
+	template.Set("innerHTML", html)
+	fragment := doc.Call("createDocumentFragment")
+	start = doc.Call("createComment", rawStartMarker)
+	end = doc.Call("createComment", rawEndMarker)
+	fragment.Call("appendChild", start)
+	fragment.Call("appendChild", template.Get("content"))
+	fragment.Call("appendChild", end)
+	return start, end
+}
+
+// rawRange lists the nodes from start to end, both included, as they are now.
+func rawRange(start, end js.Value) []js.Value {
+	nodes := []js.Value{}
+	for node := start; !node.IsNull() && !node.IsUndefined(); node = node.Get("nextSibling") {
+		nodes = append(nodes, node)
+		if node.Equal(end) {
+			break
+		}
+	}
+	return nodes
+}
+
+// moveRawRange puts the nodes of a raw range inside parent, before next.
+func moveRawRange(start, end, parent, next js.Value) {
+	for _, node := range rawRange(start, end) {
+		parent.Call("insertBefore", node, next)
+	}
+}
+
+// removeRawRange removes the nodes of a raw range from where they are.
+func removeRawRange(start, end js.Value) {
+	for _, node := range rawRange(start, end) {
+		if parent := node.Get("parentNode"); !parent.IsNull() {
+			parent.Call("removeChild", node)
+		}
+	}
 }

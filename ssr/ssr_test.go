@@ -246,3 +246,64 @@ func TestDynamicRendersWhatItHoldsNow(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 }
+
+func TestRawIsWrittenAsItIsBetweenMarkers(t *testing.T) {
+	got := Render(func() hx.INode {
+		return hx.Div().Body(
+			hx.P().Text("<b>escaped</b>"),
+			hx.Raw("<b>not</b> escaped &amp; <i>trusted</i>"),
+			hx.P().Text("after"))
+	})
+	want := `<div><p>&lt;b&gt;escaped&lt;/b&gt;</p><!--hx-raw--><b>not</b> escaped &amp; <i>trusted</i><!--/hx-raw--><p>after</p></div>`
+	if got != want {
+		t.Fatalf("\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestRawCanHoldAnythingAndBeEmpty(t *testing.T) {
+	got := Render(func() hx.INode {
+		return hx.Table().Body(hx.TBody().Body(hx.Raw("<tr><td>1</td></tr>"), hx.Raw(""), hx.Raw("text only")))
+	})
+	want := `<table><tbody><!--hx-raw--><tr><td>1</td></tr><!--/hx-raw--><!--hx-raw--><!--/hx-raw--><!--hx-raw-->text only<!--/hx-raw--></tbody></table>`
+	if got != want {
+		t.Fatalf("\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestRawIgnoresWhatNeedsAnElement(t *testing.T) {
+	got := Render(func() hx.INode {
+		return hx.Div().Body(hx.Raw("<b>x</b>").Class("a").Id("b").Attribute("k", "v").Text("t").OnClick(func(hx.EventContext) {}))
+	})
+	if got != `<div><!--hx-raw--><b>x</b><!--/hx-raw--></div>` {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestRawInsideDynamic(t *testing.T) {
+	icon := hx.Signal("<svg></svg>")
+	got := Render(func() hx.INode {
+		return hx.Span().Body(hx.Dynamic(func() hx.INode { return hx.Raw(icon.Get()) }))
+	})
+	if got != `<span><!--hx-raw--><svg></svg><!--/hx-raw--></span>` {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestUnsafeURLsAreNeutralized(t *testing.T) {
+	out := Render(func() hx.INode {
+		return hx.Div().Body(
+			hx.A().Href("javascript:alert(1)").Text("x"),
+			hx.Img().Src("data:text/html,x"),
+			hx.A().Attribute("HREF", " javascript:x"),
+			hx.A().Href("/ok?next=a:b"),
+		)
+	})
+	for _, bad := range []string{"javascript:", "data:text"} {
+		if strings.Contains(strings.ToLower(out), bad) {
+			t.Errorf("%q survived: %s", bad, out)
+		}
+	}
+	if !strings.Contains(out, `href="/ok?next=a:b"`) {
+		t.Errorf("relative URL changed: %s", out)
+	}
+}

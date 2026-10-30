@@ -152,6 +152,21 @@ func Pre() INode { return current().Element("PRE", "") }
 // Noop is a fragment: it renders its children but no element of its own.
 func Noop() INode { return current().Fragment() }
 
+// Raw is HTML that is written as it is, with no escaping, where the node is. It
+// has no element of its own, like Noop: what it holds becomes siblings of the
+// nodes around it.
+//
+// Raw is for HTML you trust: markup you made, or text that has been through a
+// sanitizer. NEVER give it something a user typed, or the page is open to script
+// injection. For text use Text, which escapes it.
+//
+// On a server the HTML goes between two comments, <!--hx-raw--> and
+// <!--/hx-raw-->, so the browser knows where it ends when it hydrates the page;
+// it adopts it as it is and never touches it. A script inside it runs when the
+// server's page loads, and does not when the browser creates the node. Setting
+// attributes, classes, styles, events or children on a Raw does nothing.
+func Raw(html string) INode { return current().Raw(html) }
+
 // El creates a node with any tag, for the ones that have no constructor.
 func El(tag string) INode { return current().Element(strings.ToUpper(tag), "") }
 

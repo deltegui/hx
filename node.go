@@ -65,7 +65,7 @@ type INode interface {
 type EventContext struct {
 	Target INode
 	// Event is the event of the browser, and nil on a server. In browser code use
-	// wasm.EventOf(ctx) to get it as a dom.Event (from honnef.co/go/js/dom/v2).
+	// wasm.EventOf(ctx) to get it as a js.Value (see also wasm.PreventDefault).
 	Event any
 }
 

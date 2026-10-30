@@ -261,7 +261,7 @@ send := hx.Action(func(ctx context.Context, _ struct{}) (Result, error) {
 })
 
 form.OnSubmit(func(ctx hx.EventContext) {
-	wasm.EventOf(ctx).PreventDefault() // the browser does not send it, Do does
+	wasm.PreventDefault(ctx) // the browser does not send it, Do does
 	send.Run(struct{}{})
 })
 ```

@@ -34,6 +34,12 @@ func (ssr *StringRenderer) Render(current *VNode) {
 		ssr.writeChildren(current)
 		return
 	}
+	if current.tag == rawIdNode {
+		ssr.buff.WriteString("<!--" + rawStartMarker + "-->")
+		ssr.buff.WriteString(current.rawHTML)
+		ssr.buff.WriteString("<!--" + rawEndMarker + "-->")
+		return
+	}
 	ssr.writeOpenTag(current)
 	if !isVoid(current.tag) {
 		ssr.writeBody(current)

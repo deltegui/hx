@@ -88,6 +88,7 @@ type VNode struct {
 
 	tag       string
 	namespace string
+	rawHTML   string // what a raw node holds
 	id        diffValue[string]
 	text      diffValue[string]
 	value     diffValue[string]
@@ -428,7 +429,7 @@ func (element *VNode) Attribute(key, value string) hx.INode {
 	if len(key) <= 0 {
 		return element
 	}
-	if setEntry(element.attributes, key, value) {
+	if setEntry(element.attributes, key, hx.SafeAttribute(key, value)) {
 		element.setDirty(flagAttributes)
 	}
 	return element
@@ -620,6 +621,15 @@ func (element *VNode) OnBlur(handler func(ctx hx.EventContext)) hx.INode {
 }
 
 const noopIdNode string = "noop"
+
+// A raw node holds HTML that is written as it is (see hx.Raw). It has no
+// element of its own: in the DOM it is the nodes of its HTML between two
+// comments, which let the browser tell where it starts and ends.
+const (
+	rawIdNode      string = "raw"
+	rawStartMarker        = "hx-raw"
+	rawEndMarker          = "/hx-raw"
+)
 
 func asVNode(i hx.INode) *VNode {
 	if v, ok := i.(*VNode); ok {

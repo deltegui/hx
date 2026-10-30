@@ -11,6 +11,9 @@ type Engine interface {
 	// Fragment creates a node that has no element of its own: its children go
 	// to its parent.
 	Fragment() INode
+	// Raw creates a node that has no element of its own and holds HTML that is
+	// written as it is. See hx.Raw.
+	Raw(html string) INode
 	// OnMount is what the function of the same name does in this engine.
 	OnMount(fn func())
 	// IsServer tells if the code runs on a server.

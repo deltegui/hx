@@ -8,7 +8,6 @@ import (
 
 	"github.com/deltegui/hx"
 	"github.com/deltegui/hx/wasm"
-	"honnef.co/go/js/dom/v2"
 )
 
 func formsPage() hx.INode {
@@ -62,7 +61,7 @@ func choicesCard() hx.INode {
 	)
 
 	check := hx.Input().Type("checkbox").OnChange(func(ctx hx.EventContext) {
-		agree.Set(wasm.EventOf(ctx).Target().Underlying().Get("checked").Bool())
+		agree.Set(wasm.EventOf(ctx).Get("target").Get("checked").Bool())
 	})
 
 	return card("Select and checkbox",
@@ -75,8 +74,8 @@ func choicesCard() hx.INode {
 func keysCard() hx.INode {
 	log := newLog()
 	in := hx.Input().Placeholder("press keys").OnKeyUp(func(ctx hx.EventContext) {
-		if key, ok := ctx.Event.(*dom.KeyboardEvent); ok {
-			log.Add("keyup %q", key.Key())
+		if event := wasm.EventOf(ctx); !event.IsUndefined() {
+			log.Add("keyup %q", event.Get("key").String())
 		}
 	})
 

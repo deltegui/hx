@@ -489,3 +489,11 @@ func TestDynamicCanShowNothing(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 }
+
+func TestRawIsWrittenBetweenMarkers(t *testing.T) {
+	got := render(hx.Div().Body(hx.Raw("<b>x</b>"), hx.Span().Text("y")))
+	want := `<div><!--hx-raw--><b>x</b><!--/hx-raw--><span>y</span></div>`
+	if got != want {
+		t.Fatalf("\n got %s\nwant %s", got, want)
+	}
+}

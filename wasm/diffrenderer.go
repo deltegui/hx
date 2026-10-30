@@ -7,13 +7,11 @@ import (
 	"log"
 	"strings"
 	"syscall/js"
-
-	"honnef.co/go/js/dom/v2"
 )
 
 // DiffRenderer applies the changes of the nodes to the browser DOM. It batches them and runs once per animation frame.
 type DiffRenderer struct {
-	mountpoint  dom.Element
+	mountpoint  js.Value
 	markNodes   map[*VNode]struct{}
 	toPlace     map[*VNode]struct{} // DOM owners whose children must be put in order
 	selects     []*VNode            // selects that get their value when the rest of the render is done
@@ -22,7 +20,7 @@ type DiffRenderer struct {
 	rafCallback js.Func
 }
 
-func newRenderer(element dom.Element) *DiffRenderer {
+func newRenderer(element js.Value) *DiffRenderer {
 	r := &DiffRenderer{
 		mountpoint: element,
 		markNodes:  map[*VNode]struct{}{},
@@ -148,17 +146,18 @@ func domParentOf(element *VNode) *VNode {
 	return nil
 }
 
-// collectTops returns the DOM elements that the live children of node put
-// directly inside the DOM element of its owner. Noop children are transparent.
-func collectTops(node *VNode, tops []dom.Element) []dom.Element {
+// collectTops returns the nodes that the live children of node put directly
+// inside the DOM element of its owner: elements, and raw HTML. Noop children are
+// transparent.
+func collectTops(node *VNode, tops []*VNode) []*VNode {
 	for _, child := range node.children {
 		if child == nil {
 			continue
 		}
 		if child.tag == noopIdNode {
 			tops = collectTops(child, tops)
-		} else if child.haveDomElement {
-			tops = append(tops, child.domElement)
+		} else if child.hasDom() {
+			tops = append(tops, child)
 		}
 	}
 	return tops
@@ -213,11 +212,11 @@ func placeChildren(owner *VNode) {
 	if len(tops) == 0 {
 		return
 	}
-	parent := owner.domElement.Underlying()
+	parent := owner.domElement
 
 	raws := make([]js.Value, len(tops))
 	for i, top := range tops {
-		raws[i] = top.Underlying()
+		raws[i] = top.anchor()
 		raws[i].Set(positionKey, i)
 	}
 
@@ -233,7 +232,7 @@ func placeChildren(owner *VNode) {
 	next := js.Null()
 	for i := len(raws) - 1; i >= 0; i-- {
 		if !stay[i] {
-			parent.Call("insertBefore", raws[i], next)
+			tops[i].moveBefore(parent, next)
 		}
 		next = raws[i]
 	}
@@ -253,6 +252,12 @@ func removeDom(node *VNode) {
 			if child != nil {
 				removeDom(child)
 			}
+		}
+		return
+	}
+	if node.tag == rawIdNode {
+		if node.hasDom() {
+			removeRawRange(node.rawStart, node.rawEnd)
 		}
 		return
 	}
@@ -305,6 +310,12 @@ func (renderer *DiffRenderer) syncNoopNode(element *VNode) bool {
 }
 
 func (renderer *DiffRenderer) createDomElement(element *VNode) {
+	if element.tag == rawIdNode {
+		if !element.hasDom() {
+			element.rawStart, element.rawEnd = newRawRange(element.rawHTML)
+		}
+		return
+	}
 	if element.haveDomElement || len(element.tag) == 0 {
 		return
 	}
@@ -338,7 +349,7 @@ func (renderer *DiffRenderer) syncNodes(element *VNode) bool {
 }
 
 func (element *VNode) render() {
-	if element.domElement == nil {
+	if !element.haveDomElement {
 		return
 	}
 
@@ -378,7 +389,7 @@ func (element *VNode) render() {
 }
 
 func (element *VNode) updateId() {
-	element.domElement.SetID(element.id.Value())
+	element.domElement.Set("id", element.id.Value())
 	element.id.status = unchanged
 }
 
@@ -387,9 +398,9 @@ func (element *VNode) updateAttributes() {
 		value := element.attributes[attribute]
 		switch value.status {
 		case changeModified, changeNew:
-			element.domElement.SetAttribute(attribute, value.Value())
+			element.domElement.Call("setAttribute", attribute, value.Value())
 		case changeDeleted:
-			element.domElement.RemoveAttribute(attribute)
+			element.domElement.Call("removeAttribute", attribute)
 			delete(element.attributes, attribute)
 			continue
 		default:
@@ -416,9 +427,9 @@ func (element *VNode) updateStyles() {
 		element.styles[style] = value
 	}
 	if stylesString.Len() > 0 {
-		element.domElement.SetAttribute("style", stylesString.String())
+		element.domElement.Call("setAttribute", "style", stylesString.String())
 	} else {
-		element.domElement.RemoveAttribute("style")
+		element.domElement.Call("removeAttribute", "style")
 	}
 }
 
@@ -431,10 +442,10 @@ func (element *VNode) updateClasses() {
 		}
 		switch status {
 		case changeDeleted:
-			element.domElement.Class().Remove(class)
+			element.domElement.Get("classList").Call("remove", class)
 			delete(element.classes, class)
 		case changeNew:
-			element.domElement.Class().Add(class)
+			element.domElement.Get("classList").Call("add", class)
 			element.classes[class] = unchanged
 		default:
 			element.classes[class] = unchanged
@@ -448,17 +459,19 @@ func (element *VNode) updateEventListeners() {
 			continue
 		}
 		listener.attached = true
-		listener.wrapper = element.domElement.AddEventListener(string(event), false, func(e dom.Event) {
+		listener.wrapper = js.FuncOf(func(_ js.Value, args []js.Value) any {
 			hx.RunCallback(func() {
 				hx.Untrack(func() {
 					listener.fire(hx.EventContext{
 						Target: element,
-						Event:  e,
+						Event:  args[0],
 					})
 				})
 			})
 			element.scheludeRender()
+			return nil
 		})
+		element.domElement.Call("addEventListener", string(event), listener.wrapper, false)
 	}
 }
 
@@ -471,7 +484,8 @@ func (element *VNode) releaseListeners() {
 		}
 		listener.attached = false
 		if element.haveDomElement {
-			element.domElement.RemoveEventListener(string(event), false, listener.wrapper)
+			element.domElement.Call("removeEventListener", string(event), listener.wrapper, false)
+			listener.wrapper.Release()
 		}
 	}
 }
@@ -523,7 +537,7 @@ func (element *VNode) deferSelectValue() {
 }
 
 func (element *VNode) updateChecked() {
-	jsVal := element.domElement.Underlying()
+	jsVal := element.domElement
 	on := element.checked.Value()
 	if jsVal.Get("checked").Truthy() != on {
 		jsVal.Set("checked", on)
@@ -532,7 +546,7 @@ func (element *VNode) updateChecked() {
 }
 
 func (element *VNode) updateValue() {
-	jsVal := element.domElement.Underlying()
+	jsVal := element.domElement
 	val := element.value.Value()
 	if jsVal.Get("value").String() != val {
 		jsVal.Set("value", val)

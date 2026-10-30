@@ -1,39 +1,25 @@
-<!DOCTYPE html>
-<html lang="en" xmlns:th="http://www.w3.org/1999/xhtml">
+<!doctype html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-    <title>HIX</title>
-
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
-    <script src="wasm_exec.js"></script>
-    <script src="pako.min.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hix demo</title>
+  <link rel="icon" href="logo.svg">
+  <link rel="stylesheet" href="style.css">
+  <script src="wasm_exec.js"></script>
+  <script src="pako.min.js"></script>
 </head>
 <body>
-    <div class="container" id="wasm_mount_point">
-        <!-- Go WASM content -->
-    </div>
-    <script type="text/javascript">
-        const go = new Go();
-
-        if (!WebAssembly.instantiateStreaming) {
-            WebAssembly.instantiateStreaming = async (resp, importObject) => {
-                const source = await resp.then(r => r.arrayBuffer());
-                return await WebAssembly.instantiate(source, importObject);
-            };
-        }
-
-        fetch('main.wasm.gz')
-            .then(res => res.arrayBuffer())
-            .then(buffer => {
-                const decompressed = pako.ungzip(new Uint8Array(buffer));
-                return WebAssembly.instantiate(decompressed.buffer, go.importObject);
-            })
-            .then(result => go.run(result.instance))
-            .catch(err => {
-                console.error("Error loading WASM:", err);
-            });
-    </script>
+  <div id="app"></div>
+  <div id="sandbox" class="sandbox"></div>
+  <script>
+    // main.wasm.gz is unpacked here so it works the same on any static host.
+    const go = new Go();
+    fetch("main.wasm.gz")
+      .then((res) => res.arrayBuffer())
+      .then((buf) => WebAssembly.instantiate(pako.ungzip(new Uint8Array(buf)).buffer, go.importObject))
+      .then((result) => go.run(result.instance))
+      .catch((err) => console.error("Error loading WASM:", err));
+  </script>
 </body>
 </html>

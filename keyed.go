@@ -111,6 +111,10 @@ func EachKeyed[T any, K comparable](
 		duplicates = nil
 	}
 
-	list.bindWith(reconcile, stop)
+	if b, ok := list.(binder); ok {
+		b.BindWith(reconcile, stop)
+	} else {
+		list.Effect(reconcile)
+	}
 	return list
 }

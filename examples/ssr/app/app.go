@@ -23,8 +23,8 @@ type State struct {
 	Todos []Todo `json:"todos"`
 }
 
-// App builds the whole page. The server renders it with hx.RenderToString and
-// the browser brings it to life with hx.Hydrate.
+// App builds the whole page. The server renders it with ssr.Render and
+// the browser brings it to life with wasm.Hydrate.
 func App(initial State) hx.INode {
 	count := hx.Signal(initial.Count)
 	todos := hx.Signal(initial.Todos)

@@ -5,7 +5,7 @@ A contact form with text fields, a select, a checkbox, an avatar and several att
 | | What sends the form | The answer |
 |---|---|---|
 | **No JavaScript** (or before the WASM has loaded) | the browser, as any HTML form | HTML: a redirect after a good send, or the same page with `422`, the errors and what was typed |
-| **WASM running** | `hx.Do` with `hx.FormOf(form)` | JSON, and the page does not reload |
+| **WASM running** | `hxhttp.Do` with `hxhttp.FormOf(form)` | JSON, and the page does not reload |
 | **Buttons, lists, requests** | `hx.Action`, `hx.Resource` | JSON |
 
 It is the same endpoint (`POST /contacts`): it looks at the `Accept` header. And it is the same UI code: `app/app.go` is shared by the server and the browser.
@@ -24,14 +24,14 @@ Try it with JavaScript turned off in the browser: the form still works, files in
 | `app/app.go` | The UI: the form, the list of contacts, and a "Requests" section. Shared. |
 | `app/model.go` | The types and `Validate`, used by the server and by the browser. |
 | `app/browser_wasm.go`, `app/browser_native.go` | The two things that need the browser (`PreventDefault`, `form.reset()`), one file for each side. |
-| `server/main.go` | `RenderToString`, the form handler (HTML or JSON, CSRF, uploads), and the endpoints of the lab. |
+| `server/main.go` | `ssr.Render`, the form handler (HTML or JSON, CSRF, uploads), and the endpoints of the lab. |
 | `client/main.go` | `hx.Hydrate`. |
 | `check.mjs` | The checks. |
 
 ## What it shows
 
 - **Progressive enhancement.** `form.OnSubmit` calls `PreventDefault` and runs an `Action`; without WASM that handler never runs and the browser sends the form.
-- **Files.** `hx.FormOf(form)` sends them; the server reports each one's size and hash, and the checks compare them with the real ones. A progress bar follows the upload (`OnProgress`).
+- **Files.** `hxhttp.FormOf(form)` sends them; the server reports each one's size and hash, and the checks compare them with the real ones. A progress bar follows the upload (`OnProgress`).
 - **Validation in one place.** `Validate` runs in the browser (no request) and on the server (it cannot trust the browser). The server also has a rule only it knows (a `.invalid` email domain), and its `422` JSON is shown next to the field.
 - **CSRF.** A token in a cookie and in the page: a hidden field for forms, a header for JSON.
 - **Keyed list.** Saving adds a contact at the top without recreating the others; deleting removes one.

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/ssr"
 	"hxforms/app"
 )
 
@@ -113,7 +114,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func (s *server) page(w http.ResponseWriter, status int, state app.State) {
-	body := hx.RenderToString(func() hx.INode { return app.App(state) })
+	body := ssr.Render(func() hx.INode { return app.App(state) })
 	data, _ := json.Marshal(state)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)

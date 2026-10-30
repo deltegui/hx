@@ -6,4 +6,4 @@ import "github.com/deltegui/hx"
 
 func preventDefault(hx.EventContext) {}
 
-func resetForm(*hx.VNode) {}
+func resetForm(hx.INode) {}

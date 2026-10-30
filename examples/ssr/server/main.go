@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/ssr"
 	"hxssr/app"
 )
 
@@ -32,7 +33,7 @@ WebAssembly.instantiateStreaming(fetch("/static/main.wasm"), go.importObject)
 </script>`
 
 func page(state app.State, tamper func(string) string) string {
-	body := hx.RenderToString(func() hx.INode { return app.App(state) })
+	body := ssr.Render(func() hx.INode { return app.App(state) })
 	if tamper != nil {
 		body = tamper(body)
 	}

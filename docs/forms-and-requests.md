@@ -5,7 +5,7 @@ How to send something to a server: a form, a file, some JSON. Hix gives you thre
 | Level | What | Needs WASM |
 |---|---|---|
 | **A plain HTML form** | `<form method="post">`, the server handles it | no |
-| **`hx.Do`** | One request: method, headers, body, files, progress, timeout, cancel | yes |
+| **`hxhttp.Do`** | One request: method, headers, body, files, progress, timeout, cancel | yes |
 | **`hx.Action` / `hx.Resource`** | The state of a request as signals: pending, error, result | yes |
 
 The best pages use the first and the other two together: the form works without JavaScript, and when the WASM is running it sends the same fields without reloading the page. [`examples/form-minimal`](../examples/form-minimal) is the smallest version of this (one field, about 200 lines), and [`examples/forms`](../examples/forms) is the complete one, with files, CSRF and a list.
@@ -31,7 +31,7 @@ With [server rendering](server-rendering.md) this form is in the HTML the server
 On the server, handle it like any form. Three things make it pleasant:
 
 1. **Post, redirect, get.** After a valid send, answer `303 See Other` to a page. Reloading does not send the form again.
-2. **On an invalid send, answer `422` with the same page**, rendered with what was typed and what is wrong. Put both in the `State` you give to `RenderToString`; the UI shows them. The user does not lose anything.
+2. **On an invalid send, answer `422` with the same page**, rendered with what was typed and what is wrong. Put both in the `State` you give to `ssr.Render`; the UI shows them. The user does not lose anything.
 3. **Check a CSRF token.** Put it in a cookie and in a hidden field. Cookies travel with every request to the same site.
 
 The example server does all three, in one handler, for both kinds of requests (see below).
@@ -48,14 +48,14 @@ The example server does all three, in one handler, for both kinds of requests (s
 
 On the server `BindChecked(true)` writes `checked=""`, and the checkbox is hydrated like any other field.
 
-## Sending it with WASM: `hx.Do`
+## Sending it with WASM: `hxhttp.Do`
 
 ```go
-response, err := hx.Do(ctx, hx.Request{
+response, err := hxhttp.Do(ctx, hxhttp.Request{
 	Method: "POST",
 	URL:    "/contacts",
 	Header: map[string]string{"Accept": "application/json"},
-	Body:   hx.FormOf(form),
+	Body:   hxhttp.FormOf(form),
 })
 ```
 
@@ -70,7 +70,7 @@ response, err := hx.Do(ctx, hx.Request{
 | `Method` | `GET` if empty |
 | `URL` | absolute, or relative to the page |
 | `Header` | `Content-Type` is set from the body unless you give it |
-| `Body` | `*hx.Body`, or `nil` |
+| `Body` | `*hxhttp.Body`, or `nil` |
 | `Timeout` | aborts the request after this long (0 means never) |
 | `Credentials` | send cookies on requests to *other* origins. Same-origin requests always send them |
 | `OnProgress` | called while uploading and downloading. Runs on its own goroutine |
@@ -83,13 +83,13 @@ response, err := hx.Do(ctx, hx.Request{
 | `Header` | names in lowercase. The browser only shows the headers that CORS allows |
 | `OK()` | `true` for 2xx |
 | `Text()`, `Bytes()` | the body |
-| `Err()` | `nil` for 2xx, an `*hx.HTTPError` (with the status and the body) for any other status |
+| `Err()` | `nil` for 2xx, an `*hxhttp.HTTPError` (with the status and the body) for any other status |
 
 A status that is not 2xx is **not** an error of `Do`: you got an answer. `Do` fails (returns `err`) when there is no answer:
 
 | Error | |
 |---|---|
-| `hx.ErrNotInBrowser` | `Do` was called on a server |
+| `hxhttp.ErrNotInBrowser` | `Do` was called on a server |
 | `context.Canceled` (`hx.IsCanceled(err)`) | the context was canceled |
 | `context.DeadlineExceeded` (`hx.IsTimeout(err)`) | the timeout passed |
 | another | the network failed: `hx: network error` |
@@ -98,7 +98,7 @@ Cancel a request by canceling its context:
 
 ```go
 ctx, cancel := context.WithCancel(context.Background())
-go func() { _, err := hx.Do(ctx, request); ... }()
+go func() { _, err := hxhttp.Do(ctx, request); ... }()
 cancel() // the browser aborts it, and the server sees the connection close
 ```
 
@@ -106,10 +106,10 @@ cancel() // the browser aborts it, and the server sees the connection close
 
 | | Content-Type | |
 |---|---|---|
-| `hx.FormOf(form)` | `multipart/form-data` | what the `<form>` would send: every field with a `name`, **files included**. The form must already be in the page |
-| `hx.NewMultipart()...Body()` | `multipart/form-data` | build it by hand (below) |
-| `hx.FormValues(values)` | `application/x-www-form-urlencoded` | like a form without files. A `url.Values` works |
-| `hx.TextBody(type, text)` | what you say | any text |
+| `hxhttp.FormOf(form)` | `multipart/form-data` | what the `<form>` would send: every field with a `name`, **files included**. The form must already be in the page |
+| `hxhttp.NewMultipart()...Body()` | `multipart/form-data` | build it by hand (below) |
+| `hxhttp.FormValues(values)` | `application/x-www-form-urlencoded` | like a form without files. A `url.Values` works |
+| `hxhttp.TextBody(type, text)` | what you say | any text |
 | `hxjson.Body(v)` | `application/json` | JSON (see [JSON](#json)) |
 
 ### Files
@@ -119,7 +119,7 @@ cancel() // the browser aborts it, and the server sees the connection close
 To work with the files in Go:
 
 ```go
-files := hx.FilesOf(fileInput) // []hx.File{Name, Size, Type}
+files := hxhttp.FilesOf(fileInput) // []hxhttp.File{Name, Size, Type}
 for _, f := range files {
 	fmt.Println(f.Name, f.Size, f.Type)
 }
@@ -129,7 +129,7 @@ data, err := files[0].Bytes(ctx) // reads the content. Blocks: use a goroutine
 A multipart body by hand, for when there is no form:
 
 ```go
-body := hx.NewMultipart().
+body := hxhttp.NewMultipart().
 	Field("title", "Holiday").
 	File("photo", files[0]).                                // a file the user chose
 	Bytes("report", "report.csv", "text/csv", csvBytes).     // a file made in Go
@@ -139,9 +139,9 @@ body := hx.NewMultipart().
 ### Progress
 
 ```go
-hx.Request{
-	Body: hx.FormOf(form),
-	OnProgress: func(p hx.Progress) {
+hxhttp.Request{
+	Body: hxhttp.FormOf(form),
+	OnProgress: func(p hxhttp.Progress) {
 		if p.Upload {
 			progress.Set(p.Fraction()) // 0 to 1, or 0 if the size is unknown
 		}
@@ -163,10 +163,10 @@ items, err := hxjson.Get[[]Item](ctx, "/api/items")
 _, err = hxjson.Send[Saved](ctx, "PUT", "/api/contacts/3", contact)
 ```
 
-`Send` returns an `*hx.HTTPError` for a status that is not 2xx. When the error answer has JSON you want to read (a 422 with the errors of each field), use `Do` and `Decode`:
+`Send` returns an `*hxhttp.HTTPError` for a status that is not 2xx. When the error answer has JSON you want to read (a 422 with the errors of each field), use `Do` and `Decode`:
 
 ```go
-response, err := hx.Do(ctx, hx.Request{Method: "POST", URL: "/contacts", Body: hx.FormOf(form),
+response, err := hxhttp.Do(ctx, hxhttp.Request{Method: "POST", URL: "/contacts", Body: hxhttp.FormOf(form),
 	Header: map[string]string{"Accept": "application/json"}})
 if err != nil {
 	return Result{}, err
@@ -183,7 +183,7 @@ For other headers on a JSON request, build the `Request` yourself with `hxjson.B
 
 ```go
 body, err := hxjson.Body(payload)
-response, err := hx.Do(ctx, hx.Request{Method: "DELETE", URL: url, Body: body,
+response, err := hxhttp.Do(ctx, hxhttp.Request{Method: "DELETE", URL: url, Body: body,
 	Header: map[string]string{"X-CSRF-Token": token, "Accept": "application/json"}})
 ```
 
@@ -247,10 +247,10 @@ form := hx.Form().Attribute("method", "post").Attribute("action", "/contacts").
 	Attribute("enctype", "multipart/form-data")
 
 send := hx.Action(func(ctx context.Context, _ struct{}) (Result, error) {
-	response, err := hx.Do(ctx, hx.Request{
+	response, err := hxhttp.Do(ctx, hxhttp.Request{
 		Method: "POST", URL: "/contacts",
 		Header: map[string]string{"Accept": "application/json"},
-		Body:   hx.FormOf(form),
+		Body:   hxhttp.FormOf(form),
 	})
 	if err != nil {
 		return Result{}, err
@@ -260,7 +260,7 @@ send := hx.Action(func(ctx context.Context, _ struct{}) (Result, error) {
 })
 
 form.OnSubmit(func(ctx hx.EventContext) {
-	ctx.Event.PreventDefault() // the browser does not send it, Do does
+	wasm.EventOf(ctx).PreventDefault() // the browser does not send it, Do does
 	send.Run(struct{}{})
 })
 ```

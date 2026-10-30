@@ -1,10 +1,11 @@
 //go:build !(js && wasm)
 
-package hx
+package hxhttp
 
 import (
 	"context"
 	"errors"
+	"github.com/deltegui/hx"
 )
 
 // The requests are made by the browser. On a server these give an error, so
@@ -19,7 +20,7 @@ func Do(ctx context.Context, request Request) (Response, error) {
 }
 
 // FilesOf returns the files chosen in a file input. On a server there are none.
-func FilesOf(input *VNode) []File { return nil }
+func FilesOf(input hx.INode) []File { return nil }
 
 // Bytes reads the content of the file. It only works in the browser.
 func (f File) Bytes(ctx context.Context) ([]byte, error) {

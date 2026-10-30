@@ -6,6 +6,13 @@ import (
 	"sync"
 )
 
+// tracking tells if signals follow who reads them. The engine of the browser
+// needs it. A server engine turns it off (see Engine.Tracks): a signal is then a
+// plain value, a Computed is calculated on every read and an effect runs once.
+// With nothing to follow there is no global state, so many UIs can be built at
+// the same time. It is set once, before anything runs.
+var tracking = true
+
 var (
 	currentEffect *Effect
 	currentRoot   *Root
@@ -22,6 +29,9 @@ func accessEffect(action func(*Effect)) {
 // subscribe registers the current effect as a subscriber of subscribers.
 // The subscription is removed when the effect cleans up.
 func subscribe(subscribers map[*Effect]struct{}) {
+	if !tracking {
+		return
+	}
 	accessEffect(func(currentEffect *Effect) {
 		if currentEffect == nil {
 			if !untrack {
@@ -67,6 +77,9 @@ type SignalT[T any] struct {
 
 // Signal creates a reactive value. Reading it with Get inside an effect makes the effect run again every time the value changes.
 func Signal[T any](initial T) *SignalT[T] {
+	if !tracking {
+		return &SignalT[T]{value: initial}
+	}
 	return &SignalT[T]{
 		value:       initial,
 		subscribers: make(map[*Effect]struct{}),
@@ -79,6 +92,10 @@ func (signal *SignalT[T]) Get() T {
 	subscribe(signal.subscribers)
 	return signal.value
 }
+
+// Subscribers is how many effects follow the signal. It is meant for tests: an
+// effect that was disposed must not be counted.
+func (signal *SignalT[T]) Subscribers() int { return len(signal.subscribers) }
 
 // Set changes the value and runs, right away, every effect that read the signal.
 // It always notifies, even if the new value equals the old one.
@@ -110,6 +127,10 @@ type Effect struct {
 // An effect created inside CreateRoot is owned by the root. Any other effect lives forever unless you call Dispose.
 // For effects tied to a node use VNode.Effect instead.
 func EffectFunc(fn func()) *Effect {
+	if !tracking {
+		fn()
+		return &Effect{disposed: true}
+	}
 	e := &Effect{
 		fn:       fn,
 		childs:   make([]*Effect, 0),
@@ -156,6 +177,9 @@ func (e *Effect) clean() {
 	e.cleanUps = make([]func(), 0)
 }
 
+// Disposed tells if the effect has been stopped.
+func (e *Effect) Disposed() bool { return e.disposed }
+
 // Dispose stops the effect for good: it is unsubscribed from every
 // signal and it will never run again. Child effects are disposed too.
 func (e *Effect) Dispose() {
@@ -185,6 +209,9 @@ type Root struct {
 // Effects created outside a root and outside another effect are never disposed
 // automatically.
 func CreateRoot[T any](fn func(dispose func()) T) T {
+	if !tracking {
+		return fn(func() {})
+	}
 	root := &Root{}
 
 	mu.Lock()
@@ -221,6 +248,9 @@ func (r *Root) Dispose() {
 // OnCleanup registers fn to run the next time the current effect re-runs or is
 // disposed, or when the current root is disposed. Outside of both it does nothing.
 func OnCleanup(fn func()) {
+	if !tracking {
+		return
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	if currentEffect != nil {
@@ -232,6 +262,7 @@ func OnCleanup(fn func()) {
 
 // ComputedT is a value derived from signals. Create it with Computed.
 type ComputedT[T comparable] struct {
+	fn              func() T // set when nothing is tracked: the value is calculated on every read
 	value           T
 	dependentEffect *Effect
 	subscribers     map[*Effect]struct{}
@@ -239,6 +270,9 @@ type ComputedT[T comparable] struct {
 
 // Computed creates a value derived from other signals or computeds. It is recalculated when its dependencies change and only notifies its own subscribers when the result is different.
 func Computed[T comparable](fn func() T) *ComputedT[T] {
+	if !tracking {
+		return &ComputedT[T]{fn: fn}
+	}
 	c := &ComputedT[T]{
 		subscribers: make(map[*Effect]struct{}),
 	}
@@ -256,9 +290,15 @@ func Computed[T comparable](fn func() T) *ComputedT[T] {
 
 // Get returns the current value and subscribes the current effect, like Signal.Get.
 func (c *ComputedT[T]) Get() T {
+	if c.fn != nil {
+		return c.fn()
+	}
 	subscribe(c.subscribers)
 	return c.value
 }
+
+// Subscribers is how many effects follow the computed value, like SignalT.Subscribers.
+func (c *ComputedT[T]) Subscribers() int { return len(c.subscribers) }
 
 func (c *ComputedT[T]) notify() {
 	notify(c.subscribers)
@@ -266,6 +306,10 @@ func (c *ComputedT[T]) notify() {
 
 // Untrack runs fn without subscribing the current effect to the signals fn reads.
 func Untrack(fn func()) {
+	if !tracking {
+		fn()
+		return
+	}
 	mu.Lock()
 	prev := currentEffect
 	prevUntrack := untrack

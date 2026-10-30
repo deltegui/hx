@@ -1,16 +1,20 @@
-package hx
+package wasm
 
-import "testing"
+import (
+	"testing"
 
-func render(node INode) string {
+	"github.com/deltegui/hx"
+)
+
+func render(node hx.INode) string {
 	r := &StringRenderer{}
 	NewWithoutMount("DIV", r) // make sure the constructor works without DOM
-	r.Render(node.AsVNode())
+	r.Render(node.(*VNode))
 	return r.String()
 }
 
 func TestStringRendererAttributesAndStyles(t *testing.T) {
-	got := render(Div().Id("x").Class("b", "a").Style("color", "red").Attribute("title", "hi").Text("a<b"))
+	got := render(hx.Div().Id("x").Class("b", "a").Style("color", "red").Attribute("title", "hi").Text("a<b"))
 	want := `<div id="x" class="a b" style="color:red;" title="hi">a&lt;b</div>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
@@ -18,7 +22,7 @@ func TestStringRendererAttributesAndStyles(t *testing.T) {
 }
 
 func TestStringRendererVoidAndInput(t *testing.T) {
-	got := render(Div().Body(Input().Type("text").Value("v"), Br()))
+	got := render(hx.Div().Body(hx.Input().Type("text").Value("v"), hx.Br()))
 	want := `<div><input value="v" type="text"/><br/></div>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
@@ -26,7 +30,7 @@ func TestStringRendererVoidAndInput(t *testing.T) {
 }
 
 func TestStringRendererNoopIsTransparent(t *testing.T) {
-	got := render(Ul().Body(Noop().Body(Li().Text("1"), Li().Text("2"))))
+	got := render(hx.Ul().Body(hx.Noop().Body(hx.Li().Text("1"), hx.Li().Text("2"))))
 	want := `<ul><li>1</li><li>2</li></ul>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
@@ -34,7 +38,7 @@ func TestStringRendererNoopIsTransparent(t *testing.T) {
 }
 
 func TestStringRendererSkipsRemoved(t *testing.T) {
-	got := render(Div().Class("a", "b").RemoveClass("a").Style("x", "1").RemoveStyle("x").Attribute("k", "v").RemoveAttribute("k"))
+	got := render(hx.Div().Class("a", "b").RemoveClass("a").Style("x", "1").RemoveStyle("x").Attribute("k", "v").RemoveAttribute("k"))
 	want := `<div class="b"></div>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
@@ -42,21 +46,21 @@ func TestStringRendererSkipsRemoved(t *testing.T) {
 }
 
 func TestBodyReplacedDropsOldChildren(t *testing.T) {
-	d := Div()
-	a, b := Span().Text("a"), Span().Text("b")
+	d := hx.Div()
+	a, b := hx.Span().Text("a"), hx.Span().Text("b")
 	d.Body(a, b)
 	d.Body(b)
 	if got := render(d); got != `<div><span>b</span></div>` {
 		t.Fatalf("got %s", got)
 	}
-	if len(d.AsVNode().children) != 2 { // a (deleted, pending removal) and b
-		t.Fatalf("children=%d", len(d.AsVNode().children))
+	if len(d.(*VNode).children) != 2 { // a (deleted, pending removal) and b
+		t.Fatalf("children=%d", len(d.(*VNode).children))
 	}
 }
 
 func TestClassRemovedAndAddedAgain(t *testing.T) {
-	d := Div().Class("a")
-	d.AsVNode().classes["a"] = unchanged // as if rendered
+	d := hx.Div().Class("a")
+	d.(*VNode).classes["a"] = unchanged // as if rendered
 	d.RemoveClass("a").Class("a")
 	if !d.HaveClass("a") {
 		t.Fatal("class lost")
@@ -64,11 +68,11 @@ func TestClassRemovedAndAddedAgain(t *testing.T) {
 }
 
 func TestAttributeEdgeCases(t *testing.T) {
-	d := Div().Attribute("disabled", "")
+	d := hx.Div().Attribute("disabled", "")
 	if !d.HaveAttribute("disabled", "") {
 		t.Fatal("empty attribute ignored")
 	}
-	v := d.AsVNode()
+	v := d.(*VNode)
 	e := v.attributes["disabled"]
 	e.tick()
 	v.attributes["disabled"] = e // rendered
@@ -93,8 +97,8 @@ func TestAttributeEdgeCases(t *testing.T) {
 }
 
 func TestStyleRemovedAndAddedAgain(t *testing.T) {
-	d := Div().Style("color", "red")
-	v := d.AsVNode()
+	d := hx.Div().Style("color", "red")
+	v := d.(*VNode)
 	e := v.styles["color"]
 	e.tick()
 	v.styles["color"] = e
@@ -109,19 +113,19 @@ func TestStyleRemovedAndAddedAgain(t *testing.T) {
 }
 
 func TestOnReplacesHandler(t *testing.T) {
-	d := Div()
+	d := hx.Div()
 	called := ""
-	d.OnClick(func(EventContext) { called = "first" })
-	d.OnClick(func(EventContext) { called = "second" })
-	d.AsVNode().eventListeners[EventClick].handler(EventContext{})
+	d.OnClick(func(hx.EventContext) { called = "first" })
+	d.OnClick(func(hx.EventContext) { called = "second" })
+	d.(*VNode).eventListeners[hx.EventClick].handler(hx.EventContext{})
 	if called != "second" {
 		t.Fatalf("called=%s", called)
 	}
 }
 
 func TestBindingStopsWhenDeactivated(t *testing.T) {
-	s := Signal("a")
-	node := Span().BindText(s)
+	s := hx.Signal("a")
+	node := hx.Span().BindText(s)
 	if got := render(node); got != `<span>a</span>` {
 		t.Fatalf("got %s", got)
 	}
@@ -130,16 +134,16 @@ func TestBindingStopsWhenDeactivated(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 
-	node.AsVNode().deactivate()
+	node.(*VNode).deactivate()
 	s.Set("c")
 	if got := render(node); got != `<span>b</span>` {
 		t.Fatalf("binding still active after deactivate: %s", got)
 	}
-	if len(s.subscribers) != 0 {
-		t.Fatalf("subscribers=%d", len(s.subscribers))
+	if s.Subscribers() != 0 {
+		t.Fatalf("subscribers=%d", s.Subscribers())
 	}
 
-	node.AsVNode().reactivate()
+	node.(*VNode).reactivate()
 	if got := render(node); got != `<span>c</span>` {
 		t.Fatalf("binding not restored with the current value: %s", got)
 	}
@@ -150,35 +154,35 @@ func TestBindingStopsWhenDeactivated(t *testing.T) {
 }
 
 func TestDeactivateReachesDescendants(t *testing.T) {
-	s := Signal("a")
-	child := Span().BindText(s)
-	parent := Div().Body(Noop().Body(child))
-	parent.AsVNode().deactivate()
-	if len(s.subscribers) != 0 {
+	s := hx.Signal("a")
+	child := hx.Span().BindText(s)
+	parent := hx.Div().Body(hx.Noop().Body(child))
+	parent.(*VNode).deactivate()
+	if s.Subscribers() != 0 {
 		t.Fatalf("descendant binding still subscribed")
 	}
-	parent.AsVNode().reactivate()
-	if len(s.subscribers) != 1 {
+	parent.(*VNode).reactivate()
+	if s.Subscribers() != 1 {
 		t.Fatalf("descendant binding not restored")
 	}
 }
 
 func TestBindingInRootIsDisposedByRoot(t *testing.T) {
-	s := Signal("a")
-	dispose := CreateRoot(func(dispose func()) func() {
-		Span().BindText(s)
+	s := hx.Signal("a")
+	dispose := hx.CreateRoot(func(dispose func()) func() {
+		hx.Span().BindText(s)
 		return dispose
 	})
 	dispose()
-	if len(s.subscribers) != 0 {
-		t.Fatalf("subscribers=%d", len(s.subscribers))
+	if s.Subscribers() != 0 {
+		t.Fatalf("subscribers=%d", s.Subscribers())
 	}
 }
 
 func TestNodeEffectFollowsTheNode(t *testing.T) {
-	s := Signal(1)
+	s := hx.Signal(1)
 	runs := 0
-	node := Div().Effect(func() {
+	node := hx.Div().Effect(func() {
 		runs++
 		s.Get()
 	})
@@ -187,13 +191,13 @@ func TestNodeEffectFollowsTheNode(t *testing.T) {
 		t.Fatalf("runs=%d", runs)
 	}
 
-	node.AsVNode().deactivate()
+	node.(*VNode).deactivate()
 	s.Set(3)
 	if runs != 2 {
 		t.Fatalf("effect ran after deactivate, runs=%d", runs)
 	}
 
-	node.AsVNode().reactivate()
+	node.(*VNode).reactivate()
 	if runs != 3 {
 		t.Fatalf("effect did not run again on reactivate, runs=%d", runs)
 	}
@@ -204,10 +208,10 @@ func TestNodeEffectFollowsTheNode(t *testing.T) {
 }
 
 func TestNodeEffectCanRebuildItsOwnBody(t *testing.T) {
-	items := Signal([]string{"a"})
-	list := Ul()
+	items := hx.Signal([]string{"a"})
+	list := hx.Ul()
 	list.Effect(func() {
-		list.Body(Each(items, func(i int, v string) INode { return Li().Text(v) }))
+		list.Body(hx.Each(items, func(i int, v string) hx.INode { return hx.Li().Text(v) }))
 	})
 	items.Set([]string{"a", "b"})
 	if got := render(list); got != `<ul><li>a</li><li>b</li></ul>` {
@@ -216,9 +220,9 @@ func TestNodeEffectCanRebuildItsOwnBody(t *testing.T) {
 }
 
 func TestInputInheritsEffect(t *testing.T) {
-	s := Signal(0)
+	s := hx.Signal(0)
 	runs := 0
-	Input().Effect(func() { runs++; s.Get() })
+	hx.Input().Effect(func() { runs++; s.Get() })
 	s.Set(1)
 	if runs != 2 {
 		t.Fatalf("runs=%d", runs)
@@ -226,39 +230,39 @@ func TestInputInheritsEffect(t *testing.T) {
 }
 
 func TestIfDiscardsUnusedChild(t *testing.T) {
-	cond := Signal(false)
-	text := Signal("a")
-	var got INode
-	EffectFunc(func() {
-		got = If(cond, Span().BindText(text))
+	cond := hx.Signal(false)
+	text := hx.Signal("a")
+	var got hx.INode
+	hx.EffectFunc(func() {
+		got = hx.If(cond, hx.Span().BindText(text))
 	})
 	if got != nil {
 		t.Fatal("expected nil when the condition is false")
 	}
-	if len(text.subscribers) != 0 {
-		t.Fatalf("discarded child is still subscribed: %d", len(text.subscribers))
+	if text.Subscribers() != 0 {
+		t.Fatalf("discarded child is still subscribed: %d", text.Subscribers())
 	}
 }
 
 func TestIfKeepsUsedChildActive(t *testing.T) {
-	text := Signal("a")
-	var got INode
-	EffectFunc(func() {
-		got = If(Value(true), Span().BindText(text))
+	text := hx.Signal("a")
+	var got hx.INode
+	hx.EffectFunc(func() {
+		got = hx.If(hx.Value(true), hx.Span().BindText(text))
 	})
-	if got == nil || len(text.subscribers) != 1 {
-		t.Fatalf("used child must stay active, subscribers=%d", len(text.subscribers))
+	if got == nil || text.Subscribers() != 1 {
+		t.Fatalf("used child must stay active, subscribers=%d", text.Subscribers())
 	}
 }
 
 func TestShowDiscardsOnlyTheOtherPath(t *testing.T) {
-	a, b := Signal("a"), Signal("b")
-	var got INode
-	EffectFunc(func() {
-		got = Show(Value(true), Span().BindText(a), Span().BindText(b))
+	a, b := hx.Signal("a"), hx.Signal("b")
+	var got hx.INode
+	hx.EffectFunc(func() {
+		got = hx.Show(hx.Value(true), hx.Span().BindText(a), hx.Span().BindText(b))
 	})
-	if len(a.subscribers) != 1 || len(b.subscribers) != 0 {
-		t.Fatalf("a=%d b=%d", len(a.subscribers), len(b.subscribers))
+	if a.Subscribers() != 1 || b.Subscribers() != 0 {
+		t.Fatalf("a=%d b=%d", a.Subscribers(), b.Subscribers())
 	}
 	if got == nil {
 		t.Fatal("nil result")
@@ -266,22 +270,22 @@ func TestShowDiscardsOnlyTheOtherPath(t *testing.T) {
 }
 
 func TestDiscardedNodeComesBack(t *testing.T) {
-	text := Signal("a")
-	node := Span().BindText(text)
-	If(Value(false), node)
+	text := hx.Signal("a")
+	node := hx.Span().BindText(text)
+	hx.If(hx.Value(false), node)
 	text.Set("b")
-	node.AsVNode().reactivate()
+	node.(*VNode).reactivate()
 	if got := render(node); got != `<span>b</span>` {
 		t.Fatalf("got %s", got)
 	}
-	if len(text.subscribers) != 1 {
-		t.Fatalf("subscribers=%d", len(text.subscribers))
+	if text.Subscribers() != 1 {
+		t.Fatalf("subscribers=%d", text.Subscribers())
 	}
 }
 
 func TestFluentChainingInAnyOrder(t *testing.T) {
 	// Input-specific and generic methods can be mixed, because everything returns *VNode.
-	got := render(Input().Placeholder("p").Class("c").Type("text").Id("x").Style("a", "b").Value("v").Attribute("k", "v"))
+	got := render(hx.Input().Placeholder("p").Class("c").Type("text").Id("x").Style("a", "b").Value("v").Attribute("k", "v"))
 	want := `<input id="x" class="c" style="a:b;" value="v" k="v" placeholder="p" type="text"/>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
@@ -289,18 +293,18 @@ func TestFluentChainingInAnyOrder(t *testing.T) {
 }
 
 func TestFluentHelpers(t *testing.T) {
-	got := render(A().Href("/x").ClassIf("on", true).ClassIf("off", false).Textf("%d items", 3))
+	got := render(hx.A().Href("/x").ClassIf("on", true).ClassIf("off", false).Textf("%d items", 3))
 	want := `<a class="on" href="/x">3 items</a>`
 	if got != want {
 		t.Fatalf("\n got %s\nwant %s", got, want)
 	}
-	if got := render(El("details").Body(El("summary").Text("s"))); got != `<details><summary>s</summary></details>` {
+	if got := render(hx.El("details").Body(hx.El("summary").Text("s"))); got != `<details><summary>s</summary></details>` {
 		t.Fatalf("got %s", got)
 	}
 }
 
-// A function that returns INode can still be chained.
-func fluentCard() INode { return Div().Class("card") }
+// hx.A function that returns hx.INode can still be chained.
+func fluentCard() hx.INode { return hx.Div().Class("card") }
 
 func TestINodeReturnCanBeChained(t *testing.T) {
 	if got := render(fluentCard().Class("wide").Text("x")); got != `<div class="card wide">x</div>` {
@@ -309,47 +313,54 @@ func TestINodeReturnCanBeChained(t *testing.T) {
 }
 
 func TestTextAreaBindValueSetsText(t *testing.T) {
-	s := Signal("hi")
-	if got := render(TextArea().BindValue(s)); got != `<textarea>hi</textarea>` {
+	s := hx.Signal("hi")
+	if got := render(hx.TextArea().BindValue(s)); got != `<textarea>hi</textarea>` {
 		t.Fatalf("got %s", got)
 	}
 }
 
 func TestIfFnBuildsOnlyWhenTrue(t *testing.T) {
 	built := 0
-	build := func() INode { built++; return Span().Text("x") }
+	build := func() hx.INode { built++; return hx.Span().Text("x") }
 
-	if IfFn(Value(false), build) != nil || built != 0 {
+	if hx.IfFn(hx.Value(false), build) != nil || built != 0 {
 		t.Fatalf("built=%d when the condition is false", built)
 	}
-	if got := IfFn(Value(true), build); got == nil || built != 1 {
+	if got := hx.IfFn(hx.Value(true), build); got == nil || built != 1 {
 		t.Fatalf("built=%d when the condition is true", built)
 	}
 }
 
 func TestShowFnBuildsOnlyTheUsedPath(t *testing.T) {
 	a, b := 0, 0
-	buildA := func() INode { a++; return Span().Text("a") }
-	buildB := func() INode { b++; return Span().Text("b") }
+	buildA := func() hx.INode { a++; return hx.Span().Text("a") }
+	buildB := func() hx.INode { b++; return hx.Span().Text("b") }
 
-	if got := render(ShowFn(Value(true), buildA, buildB)); got != `<span>a</span>` || a != 1 || b != 0 {
+	if got := render(hx.ShowFn(hx.Value(true), buildA, buildB)); got != `<span>a</span>` || a != 1 || b != 0 {
 		t.Fatalf("got %s a=%d b=%d", got, a, b)
 	}
-	if got := render(ShowFn(Value(false), buildA, buildB)); got != `<span>b</span>` || a != 1 || b != 1 {
+	if got := render(hx.ShowFn(hx.Value(false), buildA, buildB)); got != `<span>b</span>` || a != 1 || b != 1 {
 		t.Fatalf("got %s a=%d b=%d", got, a, b)
 	}
-	if ShowFn(Value(false), buildA, nil) != nil {
+	if hx.ShowFn(hx.Value(false), buildA, nil) != nil {
 		t.Fatal("a nil else path must give nil")
 	}
 }
 
 func TestIfFnBindingStaysActive(t *testing.T) {
-	text := Signal("a")
-	var got INode
-	EffectFunc(func() {
-		got = IfFn(Value(true), func() INode { return Span().BindText(text) })
+	text := hx.Signal("a")
+	var got hx.INode
+	hx.EffectFunc(func() {
+		got = hx.IfFn(hx.Value(true), func() hx.INode { return hx.Span().BindText(text) })
 	})
-	if got == nil || len(text.subscribers) != 1 {
-		t.Fatalf("subscribers=%d", len(text.subscribers))
+	if got == nil || text.Subscribers() != 1 {
+		t.Fatalf("subscribers=%d", text.Subscribers())
+	}
+}
+
+func TestBindOnCheckedRegistersAChangeHandler(t *testing.T) {
+	box := hx.Input().Type("checkbox").BindOnChecked(hx.Signal(false))
+	if _, ok := box.(*VNode).eventListeners[hx.EventChange]; !ok {
+		t.Fatal("BindOnChecked must listen to change")
 	}
 }

@@ -1,8 +1,9 @@
 //go:build js && wasm
 
-package hx
+package wasm
 
 import (
+	"github.com/deltegui/hx"
 	"log"
 	"strings"
 	"syscall/js"
@@ -86,7 +87,7 @@ func (renderer *DiffRenderer) flushRendered() {
 		}
 		node.attached = true
 		for _, fn := range node.onRendered {
-			Untrack(fn)
+			hx.Untrack(fn)
 		}
 	}
 }
@@ -448,8 +449,8 @@ func (element *VNode) updateEventListeners() {
 		}
 		listener.attached = true
 		listener.wrapper = element.domElement.AddEventListener(string(event), false, func(e dom.Event) {
-			Untrack(func() {
-				listener.handler(EventContext{
+			hx.Untrack(func() {
+				listener.handler(hx.EventContext{
 					Target: element,
 					Event:  e,
 				})

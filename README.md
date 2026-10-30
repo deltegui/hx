@@ -5,7 +5,7 @@
 Hix is a reactive frontend library for Go (WASM).
 It aims to be **small, simple, and predictable**.
 
-In about 2.5K lines of code, it can:
+With a core of about 1.8K lines (comments included) and one small engine per side, it can:
 
 * Write HTML in plain old Go. No code generation needed. No strange mixed files without editor support.
 
@@ -17,7 +17,7 @@ In about 2.5K lines of code, it can:
 
 * Work seamlessly with **TinyGo**, reducing bundle sizes dramatically.
 
-* **Send forms, files and JSON** with `hx.Do`, `hx.Action` and `hx.Resource`: progress, cancel, timeout, state in signals. The same form also works without WASM.
+* **Send forms, files and JSON** with `hxhttp.Do`, `hx.Action` and `hx.Resource`: progress, cancel, timeout, state in signals. The same form also works without WASM.
 
 * **Render on the server and hydrate in the browser.** A Go backend writes plain HTML from the same UI code, and the WASM adopts it without touching the DOM.
 
@@ -38,13 +38,14 @@ import (
 	"fmt"
 
 	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/wasm"
 )
 
 func main() {
 	count := hx.Signal(0)
 	label := hx.Computed(func() string { return fmt.Sprintf("Clicked %d times", count.Get()) })
 
-	hx.NewFromId("app").Body(
+	wasm.NewFromId("app").Body(
 		hx.H1().Text("Hello, Hix"),
 		hx.P().BindText(label),
 		hx.Button().Text("Click me").OnClick(func(hx.EventContext) {
@@ -97,6 +98,27 @@ hx.EffectFunc(func() {
 })
 ```
 
+## Packages
+
+One API, two engines. You write the UI against `hx`, and each program imports the engine it needs:
+
+| Package | For | What it is |
+|---|---|---|
+| `hx` | everywhere | Signals, effects, the `INode` interface and the constructors (`Div`, `Span`...), `If`/`Each`/`EachKeyed`, `Action`, `Resource`. |
+| `hx/wasm` | the browser | The engine that keeps the tree and updates the DOM (`wasm.NewFromId`, `wasm.Hydrate`). |
+| `hx/ssr` | a server | The engine that writes HTML (`ssr.Render`). No DOM code, no tracking of signals, so renders run in parallel. |
+| `hx/hxhttp` | the browser | Requests: `hxhttp.Do` (XMLHttpRequest) with bodies for forms and files, progress, cancel and timeout. The types build everywhere. |
+| `hx/hxjson` | the browser | JSON requests on top of `hxhttp`, apart so `encoding/json` is only linked if you use it. |
+
+A library of components (a Bootstrap wrapper, say) imports only `hx`, so the same code builds on the server and in the browser, and the browser can hydrate what the server wrote.
+
+```go
+// server                                      // browser
+html := ssr.Render(func() hx.INode {          wasm.Hydrate("app", func() hx.INode {
+	return app.App(state)                          return app.App(state)
+})                                            })
+```
+
 ## Documentation
 
 | | |
@@ -105,7 +127,7 @@ hx.EffectFunc(func() {
 | [Reactivity](docs/reactivity.md) | Signals, computed values, effects, roots, cleanup and who stops what. |
 | [Building the UI](docs/building-the-ui.md) | Elements, content, attributes, classes, styles, events, forms, SVG. |
 | [Forms and requests](docs/forms-and-requests.md) | Forms with or without WASM, files, JSON, `Do`, `Action`, `Resource`, CSRF. |
-| [Server rendering](docs/server-rendering.md) | `RenderToString`, `Hydrate`, shared state, `OnMount`, what to watch for. |
+| [Server rendering](docs/server-rendering.md) | `ssr.Render`, `Hydrate`, shared state, `OnMount`, what to watch for. |
 | [Dynamic UI](docs/dynamic-ui.md) | Bindings, conditionals, lists (`Each`, `EachKeyed`), reusing nodes. |
 | [Recipes](docs/recipes.md) | Counter, todo list, search, tabs, timer, validation, components. |
 | [How it works](docs/how-it-works.md) | Dependency tracking, the renderer, the string renderer. |

@@ -1,9 +1,10 @@
 //go:build js && wasm
 
-package hx
+package wasm
 
 import (
 	"fmt"
+	"github.com/deltegui/hx"
 	"log"
 	"strings"
 	"syscall/js"
@@ -27,7 +28,7 @@ import (
 //
 // Hydrate creates a root for the UI. The returned function stops everything
 // that the UI started.
-func Hydrate(id string, build func() INode) (dispose func()) {
+func Hydrate(id string, build func() hx.INode) (dispose func()) {
 	mount := dom.GetWindow().Document().GetElementByID(id)
 	if mount == nil {
 		log.Printf("hx: Hydrate: there is no element with id %q", id)
@@ -37,13 +38,13 @@ func Hydrate(id string, build func() INode) (dispose func()) {
 }
 
 // HydrateElement is Hydrate for an element you already have.
-func HydrateElement(mount dom.Element, build func() INode) (dispose func()) {
+func HydrateElement(mount dom.Element, build func() hx.INode) (dispose func()) {
 	previousMode := currentMountMode
 	currentMountMode = mountCollect
 	mountQueue = nil
 	defer func() { currentMountMode = previousMode }()
 
-	CreateRoot(func(rootDispose func()) struct{} {
+	hx.CreateRoot(func(rootDispose func()) struct{} {
 		dispose = rootDispose
 
 		root := New(mount)

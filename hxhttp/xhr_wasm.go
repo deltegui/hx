@@ -1,18 +1,30 @@
 //go:build js && wasm
 
-package hx
+package hxhttp
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/deltegui/hx"
 	"strings"
 	"syscall/js"
 	"time"
+
+	"honnef.co/go/js/dom/v2"
 )
 
 // The requests use XMLHttpRequest instead of fetch because it is the only one
 // that reports how much of the body has been uploaded.
+
+// underlying is the DOM element of a node. Only the nodes of the browser engine
+// have one.
+func underlying(node hx.INode) (js.Value, bool) {
+	if n, ok := node.(interface{ Underlying() dom.Element }); ok && n.Underlying() != nil {
+		return n.Underlying().Underlying(), true
+	}
+	return js.Null(), false
+}
 
 type domFile struct {
 	value js.Value
@@ -178,11 +190,12 @@ func (b *Body) toJS() (payload js.Value, contentType string, err error) {
 		return js.ValueOf(string(data)), contentType, nil
 
 	case bodyForm:
-		if b.form == nil || !b.form.haveDomElement {
+		element, ok := underlying(b.form)
+		if b.form == nil || !ok {
 			return js.Undefined(), "", errors.New("hx: FormOf needs a form that is already in the page")
 		}
 		// The browser sets the content type, with the boundary.
-		return js.Global().Get("FormData").New(b.form.domElement.Underlying()), "", nil
+		return js.Global().Get("FormData").New(element), "", nil
 
 	case bodyMultipart:
 		formData := js.Global().Get("FormData").New()
@@ -208,11 +221,15 @@ func (b *Body) toJS() (payload js.Value, contentType string, err error) {
 
 // FilesOf returns the files chosen in a file input. The input has to be in the
 // page already.
-func FilesOf(input *VNode) []File {
-	if input == nil || !input.haveDomElement {
+func FilesOf(input hx.INode) []File {
+	if input == nil {
 		return nil
 	}
-	list := input.domElement.Underlying().Get("files")
+	element, ok := underlying(input)
+	if !ok {
+		return nil
+	}
+	list := element.Get("files")
 	if list.IsUndefined() || list.IsNull() {
 		return nil
 	}

@@ -1,6 +1,6 @@
 # Recipes
 
-Complete examples you can copy. Each function returns a node, so mount it with `hx.NewFromId("app").Body(recipe())`. All of them are checked to compile against the current API.
+Complete examples you can copy. Each function returns a node, so mount it with `wasm.NewFromId("app").Body(recipe())`. All of them are checked to compile against the current API.
 
 ## Counter
 
@@ -274,7 +274,7 @@ func signup() hx.INode {
 	})
 
 	return hx.Form().OnSubmit(func(ctx hx.EventContext) {
-		ctx.Event.PreventDefault()
+		wasm.EventOf(ctx).PreventDefault()
 		fmt.Println("signing up", email.Get())
 	}).Body(
 		hx.Input().Type("email").Placeholder("you@example.com").BindValue(email).BindOnInput(email),
@@ -313,7 +313,7 @@ func profile() hx.INode {
 ```go
 func main() {
 	hx.CreateRoot(func(dispose func()) struct{} {
-		hx.NewFromId("app").Body(todoList(), tasks(), timer(), tabs())
+		wasm.NewFromId("app").Body(todoList(), tasks(), timer(), tabs())
 		return struct{}{}
 	})
 	select {}

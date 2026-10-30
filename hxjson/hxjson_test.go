@@ -3,7 +3,7 @@ package hxjson
 import (
 	"testing"
 
-	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/hxhttp"
 )
 
 func TestBody(t *testing.T) {
@@ -18,7 +18,7 @@ func TestBody(t *testing.T) {
 
 func TestDecode(t *testing.T) {
 	var v struct{ N int }
-	if err := Decode(hx.Response{}, &v); err == nil {
+	if err := Decode(hxhttp.Response{}, &v); err == nil {
 		t.Fatal("an empty body is not JSON")
 	}
 }

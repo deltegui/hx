@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/wasm"
 )
 
 func main() {
@@ -31,7 +32,7 @@ func main() {
 		return fmt.Sprintf("Clicked %d times", count.Get())
 	})
 
-	hx.NewFromId("app").Body(
+	wasm.NewFromId("app").Body(
 		hx.H1().Text("Hello, Hix"),
 		hx.P().BindText(label),
 		hx.Button().Text("Click me").OnClick(func(hx.EventContext) {
@@ -42,6 +43,8 @@ func main() {
 	select {} // keep the program alive, the page needs it to react
 }
 ```
+
+`hx` is what you build the UI with. `hx/wasm` is the engine that draws it in the browser: it brings the nodes and the DOM code, and `wasm.NewFromId` mounts them. A server uses `hx/ssr` instead (see [Server rendering](server-rendering.md)); a library of components imports only `hx` and works with either.
 
 Three things to notice:
 

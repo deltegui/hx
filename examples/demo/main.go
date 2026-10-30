@@ -7,6 +7,7 @@ import (
 	"syscall/js"
 
 	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/wasm"
 )
 
 type page struct {
@@ -35,7 +36,7 @@ func hashPage() (id string, auto bool) {
 }
 
 func main() {
-	root := hx.NewFromId("app")
+	root := wasm.NewFromId("app")
 
 	hx.CreateRoot(func(dispose func()) struct{} {
 		all := pages()

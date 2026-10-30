@@ -28,30 +28,41 @@ Everything is in the package `github.com/deltegui/hx`. The parts that need the b
 | `Untrack(fn func())` | Run `fn` without subscribing the current effect. |
 | `UntrackGet[T](g Gettable[T]) T` | Read without subscribing. |
 
-## Mounting
+## Engines
+
+The package `hx` has the API a UI is written against. A program also imports one engine, which makes the nodes:
 
 | | |
 |---|---|
-| `New(element dom.Element) *VNode` | Mount on a DOM element. |
-| `NewFromId(id string) *VNode` | Mount on the element with that id. |
-| `NewWithRenderer(element, renderer)` / `NewFromIdWithRenderer(id, renderer)` | Same with a custom `Renderer`. |
-| `NewWithoutMount(tag string, renderer Renderer) *VNode` | A node that is not in the DOM (for `StringRenderer`). |
+| `hx/wasm` | The browser. Mounting and hydration (below). |
+| `hx/ssr` | A server. `ssr.Render`, `ssr.Node`. |
+| `UseEngine(Engine)` | What an engine calls when it is imported. You only need it in a test. |
+
+## Mounting (`hx/wasm`)
+
+| | |
+|---|---|
+| `wasm.New(element dom.Element) *wasm.VNode` | Mount on a DOM element. |
+| `wasm.NewFromId(id string) *wasm.VNode` | Mount on the element with that id. |
+| `wasm.NewWithRenderer(element, renderer)` / `wasm.NewFromIdWithRenderer(id, renderer)` | Same with a custom `wasm.Renderer`. |
+| `wasm.NewWithoutMount(tag string, renderer Renderer) *wasm.VNode` | A node that is not in the DOM (for `wasm.StringRenderer`, in tests). |
+| `wasm.Underlying(node hx.INode) dom.Element` | The DOM element of a node, once rendered (`nil` before). |
 
 ## Elements
 
-All return `*VNode` (also available as `INode`).
+All return `INode`.
 
 `A Article Aside Audio Br Button Canvas Code Div Em Footer Form H1 H2 H3 H4 H5 H6 Header Hr I Img Input Label Li Main Nav Noop Ol Option P Path Pre Section Select Small Source Span Strong Svg Table TBody Td TextArea TFoot Th THead Tr Ul Video`
 
 | | |
 |---|---|
-| `El(tag string) *VNode` | Any tag. |
-| `Noop() *VNode` | A fragment: renders its children, no element. |
+| `El(tag string) INode` | Any tag. |
+| `Noop() INode` | A fragment: renders its children, no element. |
 | `Svg()`, `Path()` | Created in the SVG namespace. |
 
-## VNode methods
+## INode methods
 
-All of them return `*VNode`, so they can be chained in any order, except the ones marked "returns a value".
+All of them return `INode`, so they can be chained in any order, except the ones marked "returns a value".
 
 ### Content and children
 
@@ -87,7 +98,7 @@ All of them return `*VNode`, so they can be chained in any order, except the one
 
 Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSubmit EventFocus EventBlur EventDblClick EventMouseEnter EventMouseLeave`. `Event` is a string, so `hx.Event("scroll")` works.
 
-`EventContext` has two fields: `Target *VNode` and `Event dom.Event` (`any` on a server).
+`EventContext` has two fields: `Target INode` and `Event any`, the event of the browser (`nil` on a server). In browser code `wasm.EventOf(ctx)` returns it as a `dom.Event`.
 
 ### Bindings and effects
 
@@ -105,10 +116,8 @@ Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSub
 
 | | |
 |---|---|
-| `OnRendered(fn func())` | Runs `fn` when the node is in the page and rendered, so `Underlying()` works. Again each time the node is put back. Never on a server. |
+| `OnRendered(fn func())` | Runs `fn` when the node is in the page and rendered, so `wasm.Underlying(node)` works. Again each time the node is put back. Never on a server. |
 | `OnRemoved(fn func())` | Runs `fn` when a node that `OnRendered` ran for leaves the tree. |
-| `Underlying() dom.Element` | The DOM element, after the first render. |
-| `AsVNode() *VNode` | The node itself. |
 
 ## Conditionals and lists
 
@@ -127,17 +136,17 @@ Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSub
 
 | | |
 |---|---|
-| `RenderToString(build func() INode) string` | The HTML of the UI. Runs effects once and releases them. Serialized. Builds everywhere. |
+| `ssr.Render(build func() INode) string` | The HTML of the UI. Runs effects once. Safe to call from many goroutines at the same time. Builds everywhere. |
 | `StateScript(id, json string) string` | A `<script type="application/json">` carrying `json`, escaped. Builds everywhere. |
 | `OnMount(fn func())` | Runs `fn` only in the browser, after hydration. Ignored on the server. |
 | `IsServer() bool` | `true` on the server, `false` in the browser. |
-| `Hydrate(id string, build func() INode) (dispose func())` | Adopts the server's HTML in the element with that id. Browser only. |
-| `HydrateElement(mount dom.Element, build) (dispose func())` | Same for an element you have. Browser only. |
-| `ReadState(id string) string` | The text of the element with that id (what `StateScript` wrote). Browser only. |
+| `wasm.Hydrate(id string, build func() INode) (dispose func())` | Adopts the server's HTML in the element with that id. Browser only. |
+| `wasm.HydrateElement(mount dom.Element, build) (dispose func())` | Same for an element you have. Browser only. |
+| `wasm.ReadState(id string) string` | The text of the element with that id (what `StateScript` wrote). Browser only. |
 
 ## Requests
 
-Browser only for the request itself: on a server `Do` returns `ErrNotInBrowser`, but the types build everywhere. See [Forms and requests](forms-and-requests.md).
+Package `hxhttp`. Browser only for the request itself: on a server `hxhttp.Do` returns `hxhttp.ErrNotInBrowser`, but the types build everywhere. See [Forms and requests](forms-and-requests.md).
 
 | | |
 |---|---|
@@ -162,9 +171,9 @@ JSON, in its own package so programs that do not use it do not carry `encoding/j
 
 | | |
 |---|---|
-| `hxjson.Body(v) (*hx.Body, error)` | a body that sends `v` as JSON |
+| `hxjson.Body(v) (*hxhttp.Body, error)` | a body that sends `v` as JSON |
 | `hxjson.Decode(response, &v) error` | read the JSON body of an answer |
-| `hxjson.Send[T](ctx, method, url, body) (T, error)` | send JSON, decode the answer. A status that is not 2xx is an `*hx.HTTPError` |
+| `hxjson.Send[T](ctx, method, url, body) (T, error)` | send JSON, decode the answer. A status that is not 2xx is an `*hxhttp.HTTPError` |
 | `hxjson.Get[T](ctx, url)`, `hxjson.Post[T](ctx, url, body)` | shortcuts |
 
 ### Actions and resources
@@ -182,14 +191,10 @@ JSON, in its own package so programs that do not use it do not carry `encoding/j
 | `(*ResourceT) Value()`, `Loading()`, `Error()` | Signals |
 | `Refetch()`, `Cancel()`, `Set(v)` | Load again / stop / replace the value |
 
-## Renderers
+## Renderers (`hx/wasm`)
 
 | | |
 |---|---|
-| `Renderer` | `interface{ ScheduleRender(); Mark(*VNode) }`. |
-| `DiffRenderer` | The DOM renderer used by `New` and `NewFromId`. Batches changes per animation frame. |
-| `StringRenderer` | Writes HTML. `Render(*VNode)`, `String()`, `Reset()`. |
-
-## Compatibility aliases
-
-`INode = *VNode`, and `InputVNode`, `TextAreaNode`, `OptionNode`, `AVNode`, `NoopNode` are all `VNode`. They exist so older code keeps compiling.
+| `wasm.Renderer` | `interface{ ScheduleRender(); Mark(*VNode) }`. |
+| `wasm.DiffRenderer` | The DOM renderer used by `wasm.New` and `wasm.NewFromId`. Batches changes per animation frame. |
+| `wasm.StringRenderer` | Writes the HTML of a `wasm.VNode`. For tests. A server uses `ssr.Render`. |

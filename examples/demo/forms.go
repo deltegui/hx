@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/wasm"
 	"honnef.co/go/js/dom/v2"
 )
 
@@ -61,7 +62,7 @@ func choicesCard() hx.INode {
 	)
 
 	check := hx.Input().Type("checkbox").OnChange(func(ctx hx.EventContext) {
-		agree.Set(ctx.Event.Target().Underlying().Get("checked").Bool())
+		agree.Set(wasm.EventOf(ctx).Target().Underlying().Get("checked").Bool())
 	})
 
 	return card("Select and checkbox",

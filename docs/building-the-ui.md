@@ -1,6 +1,6 @@
 # Building the UI
 
-You write HTML as Go code. Every element is a `*hx.VNode` made by a constructor, and every method returns the same `*hx.VNode`, so you chain calls.
+You write HTML as Go code. Every element is a `hx.INode` made by a constructor, and every method returns an `hx.INode`, so you chain calls. `INode` is an interface: the engine in use (`hx/wasm` in the browser, `hx/ssr` on a server) makes the nodes, and code that only uses `hx` works with both.
 
 ```go
 hx.Div().Class("card").Body(
@@ -10,7 +10,7 @@ hx.Div().Class("card").Body(
 )
 ```
 
-Methods can be chained **in any order** and on any element: `hx.Input().Placeholder("name").Class("big").Type("text")` is fine. `hx.INode` is just another name for `*hx.VNode`, so a function returning `hx.INode` can be chained too:
+Methods can be chained **in any order** and on any element: `hx.Input().Placeholder("name").Class("big").Type("text")` is fine. Every method returns `hx.INode`, so a function returning one can be chained too:
 
 ```go
 func card() hx.INode { return hx.Div().Class("card") }
@@ -23,11 +23,11 @@ card().Class("wide").Text("hi")
 The tree needs a place in the page. Mount a node on an existing element:
 
 ```go
-root := hx.NewFromId("app")          // <div id="app">
+root := wasm.NewFromId("app")          // <div id="app">
 root.Body(hx.H1().Text("Hi"))
 
 // or with a DOM element you already have
-root = hx.New(someElement)
+root = wasm.New(someElement)
 ```
 
 You can mount several roots. They are independent.
@@ -101,8 +101,8 @@ hx.Button().Text("Save").OnClick(func(ctx hx.EventContext) {
 
 The handler receives an `EventContext`:
 
-- `ctx.Target` is the node (`*hx.VNode`) that has the listener.
-- `ctx.Event` is the browser event (`dom.Event` from `honnef.co/go/js/dom/v2`).
+- `ctx.Target` is the node (`hx.INode`) that has the listener.
+- `ctx.Event` is the browser event, and `nil` on a server. `wasm.EventOf(ctx)` gives it as a `dom.Event` from `honnef.co/go/js/dom/v2`, and a type assertion such as `ctx.Event.(*dom.KeyboardEvent)` gives a specific one.
 
 Available helpers: `OnClick`, `OnInput`, `OnChange`, `OnKeyUp`, `OnKeyDown`, `OnSubmit`, `OnFocus`, `OnBlur`. For any other event use `On` with one of the `hx.Event*` constants (`EventDblClick`, `EventMouseEnter`, `EventMouseLeave`...) or your own `hx.Event("scroll")`:
 
@@ -125,7 +125,7 @@ hx.Input().OnKeyUp(func(ctx hx.EventContext) {
 })
 ```
 
-- `ctx.Event.PreventDefault()` and `StopPropagation()` are available. Use `OnSubmit` plus `PreventDefault` on forms so the page does not reload.
+- `wasm.EventOf(ctx).PreventDefault()` and `StopPropagation()` are available. Use `OnSubmit` plus `PreventDefault` on forms so the page does not reload.
 
 ## Forms
 
@@ -188,7 +188,7 @@ A `Noop` ignores things that need an element (`Class`, `Style`, `Attribute`, `On
 
 ## Reaching the DOM element
 
-After a node has been rendered, `node.Underlying()` returns its `dom.Element`. Inputs, textareas, selects, options, links, buttons, forms, images, labels, canvases, videos and audios give you the specific `honnef` type (for example `*dom.HTMLInputElement`). Other elements give a `*dom.BasicHTMLElement`.
+After a node has been rendered, `wasm.Underlying(node)` returns its `dom.Element`. Inputs, textareas, selects, options, links, buttons, forms, images, labels, canvases, videos and audios give you the specific `honnef` type (for example `*dom.HTMLInputElement`). Other elements give a `*dom.BasicHTMLElement`.
 
 The node is not rendered when you create it: the renderer runs on the next animation frame. To use the element as soon as it exists, for example to hand a `<canvas>` to a chart library, ask for it with `OnRendered`:
 
@@ -197,7 +197,7 @@ canvas := hx.Canvas()
 var chart js.Value
 canvas.OnRendered(func() {
 	// the canvas is in the document here
-	chart = js.Global().Get("Chart").New(canvas.Underlying().Underlying(), config)
+	chart = js.Global().Get("Chart").New(wasm.Underlying(canvas).Underlying(), config)
 }).OnRemoved(func() {
 	chart.Call("destroy") // the node left the tree
 })

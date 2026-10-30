@@ -15,8 +15,8 @@ Look at the page with `curl localhost:8090` to see the HTML the server writes.
 |---|---|
 | `app/app.go` | The UI, shared by the server and the browser. It must not use `syscall/js`. |
 | `app/enter_wasm.go`, `app/enter_native.go` | The one piece that needs the browser event, one file for each side. |
-| `server/main.go` | `hx.RenderToString` the UI, `hx.StateScript` the state, serve the page and the WASM. |
-| `client/main.go` | `hx.ReadState` the state and `hx.Hydrate` the UI. |
+| `server/main.go` | `hx.ssr.Render` the UI, `hx.StateScript` the state, serve the page and the WASM. |
+| `client/main.go` | `wasm.ReadState` the state and `hx.Hydrate` the UI. |
 | `check.mjs` | The checks. |
 
 ## What `make check` verifies

@@ -1,15 +1,17 @@
-package hx
+package hxhttp
 
 import (
 	"errors"
 	"fmt"
+	"github.com/deltegui/hx"
 	"sort"
 	"strings"
 	"time"
 )
 
-// This file has the types for talking to a server from the UI. The requests
-// themselves are made by Do, which only works in the browser (see fetch_wasm.go).
+// Package hxhttp makes requests from the UI: XMLHttpRequest in the browser, with
+// bodies for forms and files, progress, timeout and cancel. This file has the types for talking to a server from the UI. The requests
+// themselves are made by Do, which only works in the browser (see xhr_wasm.go).
 // The types build everywhere, so code shared with a server can use them.
 //
 // It does not import encoding/json or net/url on purpose: Go keeps the packages
@@ -17,7 +19,7 @@ import (
 // kilobytes to every WASM file. JSON is in the hxjson package.
 
 // ErrNotInBrowser is what Do returns when the code runs on a server.
-var ErrNotInBrowser = errors.New("hx: requests can only be made in the browser")
+var ErrNotInBrowser = errors.New("hxhttp: requests can only be made in the browser")
 
 // Request describes a request for Do.
 type Request struct {
@@ -112,7 +114,7 @@ type Body struct {
 	contentType string
 	text        string
 	values      map[string][]string
-	form        *VNode
+	form        hx.INode
 	multipart   *MultipartForm
 }
 
@@ -128,7 +130,7 @@ func FormValues(values map[string][]string) *Body { return &Body{kind: bodyValue
 // FormOf sends what a <form> in the page would send: every field with a name,
 // including the files chosen in file inputs (multipart/form-data). The node has
 // to be a form that has been rendered.
-func FormOf(form *VNode) *Body { return &Body{kind: bodyForm, form: form} }
+func FormOf(form hx.INode) *Body { return &Body{kind: bodyForm, form: form} }
 
 // MultipartBody sends the fields and files of a MultipartForm (multipart/form-data).
 func MultipartBody(m *MultipartForm) *Body { return &Body{kind: bodyMultipart, multipart: m} }

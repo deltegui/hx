@@ -1,4 +1,4 @@
-// Package hxjson sends and reads JSON with hx.Do.
+// Package hxjson sends and reads JSON with hxhttp.Do.
 //
 // It is a separate package on purpose. encoding/json adds around 250 KB to a
 // WASM file, and Go keeps it as soon as a package imports it, even if the code
@@ -13,20 +13,20 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/hxhttp"
 )
 
 // Body returns a request body that sends v encoded as JSON.
-func Body(v any) (*hx.Body, error) {
+func Body(v any) (*hxhttp.Body, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return nil, fmt.Errorf("hxjson: the value cannot be sent as JSON: %w", err)
 	}
-	return hx.TextBody("application/json", string(data)), nil
+	return hxhttp.TextBody("application/json", string(data)), nil
 }
 
 // Decode reads the JSON body of an answer into v.
-func Decode(response hx.Response, v any) error {
+func Decode(response hxhttp.Response, v any) error {
 	if err := json.Unmarshal(response.Bytes(), v); err != nil {
 		return fmt.Errorf("hxjson: the answer is not the JSON that was expected: %w", err)
 	}
@@ -35,13 +35,13 @@ func Decode(response hx.Response, v any) error {
 
 // Send sends body (any value, or nil for none) as JSON with that method and URL,
 // and decodes the JSON answer into T. An answer whose status is not 2xx is
-// returned as an *hx.HTTPError, with the body of the answer inside.
+// returned as an *hxhttp.HTTPError, with the body of the answer inside.
 //
-// To send something else, for example headers, build the request with hx.Do and
+// To send something else, for example headers, build the request with hxhttp.Do and
 // read the answer with Decode.
 func Send[T any](ctx context.Context, method, url string, body any) (T, error) {
 	var zero T
-	request := hx.Request{Method: method, URL: url, Header: map[string]string{"Accept": "application/json"}}
+	request := hxhttp.Request{Method: method, URL: url, Header: map[string]string{"Accept": "application/json"}}
 	if body != nil {
 		encoded, err := Body(body)
 		if err != nil {
@@ -49,7 +49,7 @@ func Send[T any](ctx context.Context, method, url string, body any) (T, error) {
 		}
 		request.Body = encoded
 	}
-	response, err := hx.Do(ctx, request)
+	response, err := hxhttp.Do(ctx, request)
 	if err != nil {
 		return zero, err
 	}

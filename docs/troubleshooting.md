@@ -60,7 +60,7 @@ A `Noop` has no element of its own, so there is nothing to style. Put a real ele
 
 ## I need the DOM element
 
-Use `node.Underlying()` after the node has been rendered. Before that it is `nil`.
+Use `wasm.Underlying(node)` after the node has been rendered. Before that it is `nil`.
 
 ## The page freezes when I make a request
 
@@ -68,7 +68,7 @@ You waited for the answer inside an event handler. The answer can only be handle
 
 ## `hx: requests can only be made in the browser`
 
-`hx.Do` (and anything that uses it) was called on a server. Requests only happen in the browser. Code shared with the server can build the `Action`, but it must not call `Run` while rendering. Event handlers never run on a server, so this normally means a request was started during the build.
+`hxhttp.Do` (and anything that uses it) was called on a server. Requests only happen in the browser. Code shared with the server can build the `Action`, but it must not call `Run` while rendering. Event handlers never run on a server, so this normally means a request was started during the build.
 
 ## `hx: network error`
 
@@ -84,15 +84,15 @@ Upload progress is reported while the request body is sent. With a small file it
 
 ## The server does not see my file
 
-A form with files needs `enctype="multipart/form-data"`. `hx.FormOf` sends it that way by itself; a plain form needs the attribute. An empty file input sends an empty part with no filename, so skip parts whose filename is empty.
+A form with files needs `enctype="multipart/form-data"`. `hxhttp.FormOf` sends it that way by itself; a plain form needs the attribute. An empty file input sends an empty part with no filename, so skip parts whose filename is empty.
 
 ## Limits worth knowing
 
-- **The DOM half is WASM only.** `New`, `NewFromId`, `Hydrate`, `Underlying()` and the DOM renderer need `GOOS=js GOARCH=wasm`. The core (signals, nodes, `RenderToString`) builds everywhere, so a server can render the UI. See [Server rendering](server-rendering.md).
+- **The DOM half is WASM only.** `wasm.New`, `wasm.NewFromId`, `wasm.Hydrate`, `wasm.Underlying` and the DOM renderer need `GOOS=js GOARCH=wasm`. The core (signals, nodes, `ssr.Render`) builds everywhere, so a server can render the UI. See [Server rendering](server-rendering.md).
 - **`Each` rebuilds its rows.** Use `EachKeyed` when rows have state or the list is long.
 - **No batching of signal writes.** Each `Set` runs its effects right away. DOM updates are still batched once per frame.
 - **`Computed` needs a comparable type.** For slices, maps or structs holding them, use a signal and update it from an effect.
 - **No router, no global store, no component lifecycle hooks.** Components are plain functions, and `node.Effect` + `OnCleanup` cover setup and teardown.
 - **Only a few element constructors.** Use `El("tag")` for the rest. SVG shapes other than `Svg` and `Path` need their own namespace and do not have constructors yet.
 - **Events.** Helpers exist for the common ones; use `On` with `hx.Event("name")` for any other.
-- **`Underlying()` type.** Inputs, textareas, selects, options, links, buttons, forms, images, labels, canvases, videos and audios return their specific `honnef` type. Other elements return `*dom.BasicHTMLElement`.
+- **`wasm.Underlying` type.** Inputs, textareas, selects, options, links, buttons, forms, images, labels, canvases, videos and audios return their specific `honnef` type. Other elements return `*dom.BasicHTMLElement`.

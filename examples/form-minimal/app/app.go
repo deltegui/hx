@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/hxhttp"
 	"github.com/deltegui/hx/hxjson"
 )
 
@@ -43,11 +44,11 @@ func App(st State) hx.INode {
 
 	// With WASM the same fields are sent without leaving the page.
 	send := hx.Action(func(ctx context.Context, _ struct{}) (Result, error) {
-		response, err := hx.Do(ctx, hx.Request{
+		response, err := hxhttp.Do(ctx, hxhttp.Request{
 			Method: "POST",
 			URL:    "/subscribe",
 			Header: map[string]string{"Accept": "application/json"},
-			Body:   hx.FormOf(form),
+			Body:   hxhttp.FormOf(form),
 		})
 		if err != nil {
 			return Result{}, err
@@ -65,7 +66,7 @@ func App(st State) hx.INode {
 	send.OnError(func(err error, _ struct{}) { problem.Set("Could not send it: " + err.Error()) })
 
 	form.OnSubmit(func(ctx hx.EventContext) {
-		preventDefault(ctx) // the browser does not send it, hx.Do does
+		preventDefault(ctx) // the browser does not send it, hxhttp.Do does
 		if p := Validate(email.Get()); p != "" {
 			problem.Set(p)
 			return

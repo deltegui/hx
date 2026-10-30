@@ -10,26 +10,27 @@ Hix can write the HTML of your UI on a server, and then bring that HTML to life 
 func App(state State) hx.INode { ... }
 
 // server
-html := hx.RenderToString(func() hx.INode { return App(state) })
+html := ssr.Render(func() hx.INode { return App(state) })
 
 // browser (WASM)
-hx.Hydrate("app", func() hx.INode { return App(state) })
+wasm.Hydrate("app", func() hx.INode { return App(state) })
 ```
 
 A complete, runnable example is in [`examples/ssr`](../examples/ssr).
 
 ## What builds where
 
-The library has two halves:
+There are three packages:
 
 | | Builds for | Contains |
 |---|---|---|
-| Core | every platform | signals, effects, roots, nodes, `Each`/`If`/`EachKeyed`, `StringRenderer`, `RenderToString`, `OnMount`, `IsServer`, `StateScript` |
-| Browser | `GOOS=js GOARCH=wasm` only | `New`, `NewFromId`, `Hydrate`, `ReadState`, `Underlying()`, the DOM renderer |
+| `hx` | every platform | signals, effects, the `INode` interface and the constructors, `Each`/`If`/`EachKeyed`, `OnMount`, `IsServer`, `StateScript`, requests |
+| `hx/ssr` | every platform | the engine of the server: `ssr.Render`. No DOM code, no `syscall/js` |
+| `hx/wasm` | `GOOS=js GOARCH=wasm` (the nodes also build elsewhere, for tests) | the engine of the browser: `New`, `NewFromId`, `Hydrate`, `ReadState`, `Underlying`, the DOM renderer |
 
-So a Go server can import `github.com/deltegui/hx` and build UI, and the same package compiled to WASM runs it in the browser.
+The UI is written against `hx` only, so one function builds the same tree with either engine. The server imports `hx/ssr` and the browser imports `hx/wasm`. A program imports one of the two: the engine registers itself when it is imported, and mixing nodes of two engines panics.
 
-On the server, `EventContext.Event` is `any` (there is no browser event), and `Underlying()` does not exist.
+On the server, `EventContext.Event` is `any` (there is no browser event), and `wasm.Underlying` does not exist.
 
 ## Project layout
 
@@ -59,7 +60,7 @@ func isEnter(hx.EventContext) bool { return false }
 func handler(w http.ResponseWriter, r *http.Request) {
 	state := loadState(r) // from your database, for example
 
-	body := hx.RenderToString(func() hx.INode { return app.App(state) })
+	body := ssr.Render(func() hx.INode { return app.App(state) })
 	data, _ := json.Marshal(state)
 
 	fmt.Fprintf(w, `<!doctype html>
@@ -77,14 +78,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-`hx.RenderToString(build)`:
+`ssr.Render(build)`:
 
-- calls `build` inside a root and writes the result as HTML,
-- runs every effect and binding **once**, to compute the initial text and attributes,
-- stops all of them before it returns, so nothing leaks from one request to the next,
+- calls `build` and writes the result as HTML,
+- runs every effect and binding **once**, to compute the initial text and attributes, and ignores event handlers,
 - ignores `OnMount`.
 
-It is safe to call from many goroutines. Calls are **serialized**, because the tracking of effects is global state: two requests are rendered one after the other.
+The server engine does not track signals: a `Signal` is a plain value, a `Computed` is calculated on every read and an effect runs once. There is no global state, so nothing leaks from one request to the next and **any number of renders can run at the same time**.
 
 The HTML is written without extra whitespace, tags in lowercase, attributes sorted, text and attribute values escaped.
 
@@ -93,15 +93,15 @@ The HTML is written without extra whitespace, tags in lowercase, attributes sort
 ```go
 func main() {
 	var state app.State
-	json.Unmarshal([]byte(hx.ReadState("hx-state")), &state)
+	json.Unmarshal([]byte(wasm.ReadState("hx-state")), &state)
 
-	hx.Hydrate("app", func() hx.INode { return app.App(state) })
+	wasm.Hydrate("app", func() hx.INode { return app.App(state) })
 
 	select {}
 }
 ```
 
-`hx.Hydrate(id, build)` calls `build` as a normal render would, but does not create elements. It walks the nodes and the HTML at the same time, pairing each node with its element, and:
+`wasm.Hydrate(id, build)` calls `build` as a normal render would, but does not create elements. It walks the nodes and the HTML at the same time, pairing each node with its element, and:
 
 - records that the text, attributes and classes that already match are in the DOM (nothing is written again),
 - attaches the event listeners,
@@ -113,7 +113,7 @@ Hydration **does not change the DOM** when the server and the browser agree. In 
 
 ### Sharing the state
 
-Both sides have to start from the same state, or the browser would build a UI that differs from the HTML. The easy way is the one in the example: the server writes the state as JSON in the page with `hx.StateScript(id, json)`, and the browser reads it with `hx.ReadState(id)`.
+Both sides have to start from the same state, or the browser would build a UI that differs from the HTML. The easy way is the one in the example: the server writes the state as JSON in the page with `hx.StateScript(id, json)`, and the browser reads it with `wasm.ReadState(id)`.
 
 `StateScript` escapes the JSON, so it can never close its own `<script>` element.
 
@@ -125,7 +125,7 @@ Some code only makes sense in the browser: timers, local storage, focusing an in
 
 ```go
 hx.OnMount(func() {
-	input.Underlying().Focus()
+	wasm.Underlying(input).Focus()
 })
 ```
 
@@ -173,9 +173,9 @@ The browser parses HTML with its own rules, and it can differ from what Hix wrot
 
 - **Clicks on buttons are lost before hydration.** Between the first paint and the end of the WASM load (it can be hundreds of KB) the page shows its content but a button with an `OnClick` does nothing. Hix does not record those events. **Forms do work**: they are HTML, so the browser sends them by itself (see [Forms and requests](forms-and-requests.md)). A link is a link. Design the important actions as forms and links.
 - **Typing before hydration.** Text typed in an input before it is hydrated stays in the input, but the signal does not know about it until the next `input` event. If you need it, read the value in `OnMount`.
-- **Streaming** is not supported: `RenderToString` returns the whole page.
-- **Signals created outside `build`** (global ones) are shared by every render. Their subscribers are released when the render ends, but if two requests need different values, create the signals inside `build`.
-- **Concurrency.** Because renders are serialized, one slow `build` delays the next. Do the slow work (database, network) before you call `RenderToString` and pass the data in.
+- **Streaming** is not supported: `ssr.Render` returns the whole page.
+- **Signals created outside `build`** (global ones) are shared by every render. Reading them from many goroutines is safe, but nobody should write to one while it is being rendered. If two requests need different values, create the signals inside `build`.
+- **Concurrency.** Renders do not wait for each other. Still, do the slow work (database, network) before you call `ssr.Render` and pass the data in.
 
 ## Testing it
 
@@ -183,7 +183,7 @@ On the server, the HTML is a string, so you can test it with plain `go test`:
 
 ```go
 func TestPage(t *testing.T) {
-	got := hx.RenderToString(func() hx.INode { return app.App(app.State{Count: 3}) })
+	got := ssr.Render(func() hx.INode { return app.App(app.State{Count: 3}) })
 	if !strings.Contains(got, `<p id="count">count: 3</p>`) {
 		t.Fatal(got)
 	}

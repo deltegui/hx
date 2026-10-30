@@ -1,6 +1,6 @@
 //go:build js && wasm
 
-package hx
+package wasm
 
 import (
 	"strings"

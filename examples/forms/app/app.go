@@ -8,15 +8,16 @@ import (
 	"time"
 
 	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/hxhttp"
 	"github.com/deltegui/hx/hxjson"
 )
 
-// App builds the whole page. The server renders it with hx.RenderToString and
-// the browser brings it to life with hx.Hydrate.
+// App builds the whole page. The server renders it with ssr.Render and
+// the browser brings it to life with wasm.Hydrate.
 //
 // The forms work without JavaScript: they are normal HTML forms that the server
 // understands. When the WASM is running they send the same fields with
-// hx.Do instead, and the page does not reload.
+// hxhttp.Do instead, and the page does not reload.
 func App(st State) hx.INode {
 	// The contacts are a resource: they start with what the server rendered and
 	// "Refresh" loads them again.
@@ -73,12 +74,12 @@ func contactForm(st State, contacts *hx.ResourceT[[]Contact], banner *hx.SignalT
 
 	send := hx.Action(func(ctx context.Context, _ struct{}) (Result, error) {
 		progress.Set(0)
-		response, err := hx.Do(ctx, hx.Request{
+		response, err := hxhttp.Do(ctx, hxhttp.Request{
 			Method: "POST",
 			URL:    "/contacts",
 			Header: map[string]string{"Accept": "application/json"},
-			Body:   hx.FormOf(form), // every field of the form, files included
-			OnProgress: func(p hx.Progress) {
+			Body:   hxhttp.FormOf(form), // every field of the form, files included
+			OnProgress: func(p hxhttp.Progress) {
 				if p.Upload {
 					progress.Set(p.Fraction())
 				}
@@ -116,7 +117,7 @@ func contactForm(st State, contacts *hx.ResourceT[[]Contact], banner *hx.SignalT
 	})
 
 	form.OnSubmit(func(ctx hx.EventContext) {
-		preventDefault(ctx) // the browser does not send the form, hx.Do does
+		preventDefault(ctx) // the browser does not send the form, hxhttp.Do does
 		banner.Set("")
 		failure.Set("")
 		values := Values{
@@ -216,7 +217,7 @@ func fileSummary(c Contact) string {
 
 func contactList(st State, contacts *hx.ResourceT[[]Contact]) hx.INode {
 	remove := hx.Action(func(ctx context.Context, id int) (int, error) {
-		response, err := hx.Do(ctx, hx.Request{
+		response, err := hxhttp.Do(ctx, hxhttp.Request{
 			Method: "DELETE",
 			URL:    fmt.Sprintf("/api/contacts/%d", id),
 			Header: map[string]string{"Accept": "application/json", "X-CSRF-Token": st.CSRF},
@@ -299,25 +300,25 @@ func lab() hx.INode {
 		started := time.Now()
 		switch which {
 		case "slow":
-			response, err := hx.Do(ctx, hx.Request{URL: "/api/slow?ms=3000"})
+			response, err := hxhttp.Do(ctx, hxhttp.Request{URL: "/api/slow?ms=3000"})
 			if err != nil {
 				return "", err
 			}
 			return "slow answer: " + response.Text(), response.Err()
 
 		case "timeout":
-			_, err := hx.Do(ctx, hx.Request{URL: "/api/slow?ms=1500", Timeout: 100 * time.Millisecond})
+			_, err := hxhttp.Do(ctx, hxhttp.Request{URL: "/api/slow?ms=1500", Timeout: 100 * time.Millisecond})
 			return "", err
 
 		case "missing":
-			response, err := hx.Do(ctx, hx.Request{URL: "/api/missing"})
+			response, err := hxhttp.Do(ctx, hxhttp.Request{URL: "/api/missing"})
 			if err != nil {
 				return "", err
 			}
 			return "", response.Err()
 
 		case "network":
-			_, err := hx.Do(ctx, hx.Request{URL: "http://127.0.0.1:1/nothing-listens-here"})
+			_, err := hxhttp.Do(ctx, hxhttp.Request{URL: "http://127.0.0.1:1/nothing-listens-here"})
 			return "", err
 
 		case "upload":
@@ -326,10 +327,10 @@ func lab() hx.INode {
 			for i := range data {
 				data[i] = byte(i)
 			}
-			body := hx.NewMultipart().Field("note", "three megabytes").Bytes("blob", "big.bin", "application/octet-stream", data).Body()
-			response, err := hx.Do(ctx, hx.Request{
+			body := hxhttp.NewMultipart().Field("note", "three megabytes").Bytes("blob", "big.bin", "application/octet-stream", data).Body()
+			response, err := hxhttp.Do(ctx, hxhttp.Request{
 				Method: "POST", URL: "/api/upload", Body: body,
-				OnProgress: func(p hx.Progress) {
+				OnProgress: func(p hxhttp.Progress) {
 					if p.Upload {
 						uploaded.Set(p.Fraction())
 					}

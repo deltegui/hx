@@ -9,8 +9,8 @@ import (
 // bindings and effects do not live until the effect that built it re-runs.
 // If the node ends up in the tree later it is activated again.
 func discard(node INode) {
-	if node != nil {
-		node.AsVNode().deactivate()
+	if d, ok := node.(discarder); ok {
+		d.Discard()
 	}
 }
 

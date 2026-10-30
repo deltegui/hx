@@ -1,8 +1,10 @@
-package hx
+package wasm
 
 import (
 	"fmt"
 	"testing"
+
+	"github.com/deltegui/hx"
 )
 
 type keyedItem struct {
@@ -11,35 +13,35 @@ type keyedItem struct {
 }
 
 type keyedHarness struct {
-	items   *SignalT[[]keyedItem]
-	list    INode
-	ul      INode
+	items   *hx.SignalT[[]keyedItem]
+	list    hx.INode
+	ul      hx.INode
 	built   map[int]int
-	nodes   map[int]INode
+	nodes   map[int]hx.INode
 	effects map[int]int // runs of an effect created inside render
-	side    *SignalT[int]
+	side    *hx.SignalT[int]
 }
 
 func newKeyedHarness(items ...keyedItem) *keyedHarness {
 	h := &keyedHarness{
-		items:   Signal(items),
+		items:   hx.Signal(items),
 		built:   map[int]int{},
-		nodes:   map[int]INode{},
+		nodes:   map[int]hx.INode{},
 		effects: map[int]int{},
-		side:    Signal(0),
+		side:    hx.Signal(0),
 	}
-	h.list = EachKeyed(h.items,
+	h.list = hx.EachKeyed(h.items,
 		func(it keyedItem) int { return it.id },
-		func(id int, it Gettable[keyedItem], index Gettable[int]) INode {
+		func(id int, it hx.Gettable[keyedItem], index hx.Gettable[int]) hx.INode {
 			h.built[id]++
-			EffectFunc(func() { h.effects[id]++; h.side.Get() })
-			n := Li().BindText(Computed(func() string {
+			hx.EffectFunc(func() { h.effects[id]++; h.side.Get() })
+			n := hx.Li().BindText(hx.Computed(func() string {
 				return fmt.Sprintf("%d:%s", index.Get(), it.Get().name)
 			}))
 			h.nodes[id] = n
 			return n
 		})
-	h.ul = Ul().Body(h.list)
+	h.ul = hx.Ul().Body(h.list)
 	return h
 }
 
@@ -101,7 +103,7 @@ func TestEachKeyedRebuildsARemovedAndReturnedKey(t *testing.T) {
 
 func TestEachKeyedStopsWhenTheListLeavesTheTree(t *testing.T) {
 	h := newKeyedHarness(keyedItem{1, "a"})
-	h.ul.deactivate()
+	h.ul.(*VNode).deactivate()
 
 	h.items.Set([]keyedItem{{1, "a"}, {2, "b"}})
 	if h.built[2] != 0 {
@@ -112,7 +114,7 @@ func TestEachKeyedStopsWhenTheListLeavesTheTree(t *testing.T) {
 		t.Fatalf("row effects must be stopped, effects=%v", h.effects)
 	}
 
-	h.ul.reactivate()
+	h.ul.(*VNode).reactivate()
 	if got := render(h.ul); got != `<ul><li>0:a</li><li>1:b</li></ul>` {
 		t.Fatalf("got %s", got)
 	}
@@ -126,14 +128,14 @@ func TestEachKeyedDuplicatedKeysAreStillRendered(t *testing.T) {
 }
 
 func TestEachKeyedSkipsNilRows(t *testing.T) {
-	items := Signal([]int{1, 2, 3})
-	list := EachKeyed(items, func(i int) int { return i }, func(k int, it Gettable[int], idx Gettable[int]) INode {
+	items := hx.Signal([]int{1, 2, 3})
+	list := hx.EachKeyed(items, func(i int) int { return i }, func(k int, it hx.Gettable[int], idx hx.Gettable[int]) hx.INode {
 		if k == 2 {
 			return nil
 		}
-		return Li().Text(fmt.Sprint(k))
+		return hx.Li().Text(fmt.Sprint(k))
 	})
-	if got := render(Ul().Body(list)); got != `<ul><li>1</li><li>3</li></ul>` {
+	if got := render(hx.Ul().Body(list)); got != `<ul><li>1</li><li>3</li></ul>` {
 		t.Fatalf("got %s", got)
 	}
 }

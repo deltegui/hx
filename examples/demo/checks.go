@@ -8,6 +8,7 @@ import (
 	"syscall/js"
 
 	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/wasm"
 	"honnef.co/go/js/dom/v2"
 )
 
@@ -17,14 +18,14 @@ var autoRunChecks bool
 // sandbox is a throwaway mount point in the real DOM.
 type sandbox struct {
 	el   dom.Element
-	root *hx.VNode
+	root *wasm.VNode
 }
 
 func newSandbox() *sandbox {
 	doc := dom.GetWindow().Document()
 	el := doc.CreateElement("div")
 	doc.GetElementByID("sandbox").AppendChild(el)
-	return &sandbox{el: el, root: hx.New(el)}
+	return &sandbox{el: el, root: wasm.New(el)}
 }
 
 func (s *sandbox) html() string { return s.el.InnerHTML() }
@@ -516,8 +517,8 @@ func allChecks() []check {
 			in := hx.Input()
 			sb.root.Body(in)
 			settle()
-			if _, ok := in.AsVNode().Underlying().(*dom.HTMLInputElement); !ok {
-				return fmt.Errorf("Underlying() is %T, want *dom.HTMLInputElement", in.AsVNode().Underlying())
+			if _, ok := wasm.Underlying(in).(*dom.HTMLInputElement); !ok {
+				return fmt.Errorf("Underlying() is %T, want *dom.HTMLInputElement", wasm.Underlying(in))
 			}
 			return nil
 		}},
@@ -575,7 +576,7 @@ func allChecks() []check {
 			canvas := hx.Canvas()
 			canvas.OnRendered(func() {
 				calls++
-				connected = canvas.Underlying() != nil && canvas.Underlying().Underlying().Get("isConnected").Bool()
+				connected = wasm.Underlying(canvas) != nil && wasm.Underlying(canvas).Underlying().Get("isConnected").Bool()
 			})
 			sb.root.Body(hx.Div().Body(canvas))
 			if err := eq("calls before the render", calls, 0); err != nil {

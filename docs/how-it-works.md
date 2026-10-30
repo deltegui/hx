@@ -2,12 +2,20 @@
 
 You do not need this page to use Hix. It explains what happens under the hood so the behaviour is predictable.
 
-## Two halves
+## One API, two engines
 
-1. **Reactivity** (`signal.go`). Signals, computed values and effects. It knows nothing about the DOM.
-2. **Nodes and renderer** (`element.go`, `diffrenderer.go`). A tree of `VNode` and the code that applies it to the DOM.
+1. **`hx`, the core.** Signals, computed values and effects (`signal.go`), the `INode` interface and the constructors (`Div`, `Span`...), the operators (`If`, `Each`, `EachKeyed`) and the state of requests (`Action`, `Resource`). Making the requests is `hx/hxhttp`. It knows nothing about the DOM or about HTML. Code that builds a UI imports only this, so a library of components, like a Bootstrap wrapper, works on the server and in the browser.
+2. **An engine**, which makes the nodes and decides what a render is. A program imports the one it needs, and the engine registers itself (`hx.UseEngine`):
+   - **`hx/wasm`** (browser). A `VNode` tree and the code that applies it to the DOM (`element.go`, `diffrenderer.go`), and `Hydrate`.
+   - **`hx/ssr`** (server). A plain tree that is written as HTML. No DOM code is linked.
 
-They meet in bindings and `node.Effect`: an effect that calls node methods like `Text` or `Class`.
+The constructors ask the engine for the node: `hx.Div()` is `engine.Element("DIV", "")`. The two meet in bindings and `node.Effect`: in the browser an effect that calls node methods like `Text` or `Class` and runs again when its signals change; on a server, a function that runs once.
+
+A program has one engine. Mixing nodes of two engines panics, with a message.
+
+## Tracking is the engine's choice
+
+The browser needs signals to follow who reads them. A server does not, since it builds the UI once. The ssr engine turns tracking off: a `Signal` is a plain value, a `Computed` is calculated on every read, an effect runs once, `OnMount` is ignored and `CreateRoot`/`OnCleanup` do nothing. There is no global state left, so many UIs are rendered at the same time with no lock.
 
 ## Dependency tracking
 
@@ -17,7 +25,7 @@ Effects belong to an owner (a parent effect, a root or a node) so they can be st
 
 ## A node is a description of what you want
 
-A `VNode` stores the **desired state**: text, attributes, classes, styles, listeners, children. Each property remembers two values, the one already in the DOM and the pending one, plus a flag saying what changed. Calling a method only edits that description and marks the node "dirty".
+A `VNode` stores the **desired state**: text, attributes, classes, styles, listeners, children. Each property remembers two values, the one already in the DOM and the pending one, plus a flag saying what changed. Calling a method only edits that description and marks the node "dirty". (This is the node of the browser engine. The ssr node only keeps the values, since nothing is drawn twice.)
 
 This is why `GetAttribute`, `HaveClass`... answer about the state *after the next render*, and why setting a value and then setting it back before the render changes nothing in the DOM.
 
@@ -58,23 +66,15 @@ Each node has at most one DOM listener per event type. `On` stores the handler a
 - Every property change is a single DOM call. Styles are written together in the `style` attribute.
 - `Each` rebuilds its rows when the list signal changes. Use `EachKeyed` to keep them (see [Dynamic UI](dynamic-ui.md#keeping-the-rows-eachkeyed)), or bind each row to its own signal.
 
-## StringRenderer
+## StringRenderer (tests)
 
-`StringRenderer` implements the same `Renderer` interface but writes HTML text instead of touching the DOM:
+`wasm.StringRenderer` implements the same `Renderer` interface as the DOM renderer but writes HTML text. The browser engine keeps it so its nodes can be tested on any platform, without a browser. It is not what a server uses: `hx/ssr` has its own nodes and its own writer. The two write the same HTML (tags in lower case, `Noop` nodes transparent, attributes, classes and styles sorted), because hydration needs the tree the server wrote and the tree the browser builds to be the same. See [Server rendering and hydration](server-rendering.md).
 
-```go
-var r hx.StringRenderer
-r.Render(hx.Div().Class("card").Body(hx.P().Text("hi")))
-r.String() // <div class="card"><p>hi</p></div>
-```
-
-Tags are lowercase, `Noop` nodes are transparent, removed entries are skipped, and attributes, classes and styles come out sorted so the output is stable. It builds on every platform, which is what makes server rendering possible: `RenderToString` runs your UI in a root and returns what a `StringRenderer` wrote. See [Server rendering and hydration](server-rendering.md).
-
-Custom renderers are possible: implement `Renderer` (`ScheduleRender` and `Mark`) and mount with `hx.NewWithRenderer`.
+Custom renderers are possible: implement `Renderer` (`ScheduleRender` and `Mark`) and mount with `wasm.NewWithRenderer`.
 
 ## Requests
 
-`hx.Do` uses `XMLHttpRequest`, not `fetch`, because it is the only one that tells you how much of a body has been uploaded. It blocks the goroutine that calls it, and the answer is delivered from the browser through a channel, which is why it cannot be waited for inside an event handler. `Action` wraps it: it runs the function on a goroutine, keeps the state in signals, and cancels the previous run when you start a new one.
+`hxhttp.Do` uses `XMLHttpRequest`, not `fetch`, because it is the only one that tells you how much of a body has been uploaded. It blocks the goroutine that calls it, and the answer is delivered from the browser through a channel, which is why it cannot be waited for inside an event handler. `Action` wraps it: it runs the function on a goroutine, keeps the state in signals, and cancels the previous run when you start a new one.
 
 The core does not import `encoding/json` or `net/url`: Go keeps every package a program imports even if it is never used, and they would add about 350 KB to every WASM file. JSON lives in `hxjson`.
 

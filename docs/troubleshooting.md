@@ -7,16 +7,24 @@
 - **It rendered once and then nothing reacts.** `main` returned. End it with `select {}`.
 - **`getElementById` fails or the node does not appear.** The mount `id` has to exist when `main` runs. Put the script after the element, or at the end of `<body>`.
 
+## `panic: hx: there is no engine`
+
+You built a node before any engine was imported. A program needs one: import `github.com/deltegui/hx/wasm` in the code that runs in the browser, or `github.com/deltegui/hx/ssr` in the code that renders on a server. The package that only builds the UI (`app/`) imports just `hx`; the `main` of each side imports its engine. A blank import is enough if you call nothing from it (`import _ "github.com/deltegui/hx/wasm"`).
+
+## `panic: ... the node was not made by the browser engine` (or the server engine)
+
+A node from one engine was given to the other, for example a tree built while `hx/ssr` was the engine and then mounted with `hx/wasm`. A program has one engine. Importing both in the same binary makes the one that initializes last the engine in use, so keep them in different `main` packages.
+
 ## "Cannot call Get if there is no effect"
 
-Hix logs this when you call `signal.Get()` while building the tree, outside any effect. The value is read once and will never update:
+The browser engine logs this when you call `signal.Get()` while building the tree, outside any effect. The value is read once and will never update:
 
 ```go
 hx.P().Text(fmt.Sprint(count.Get()))   // read once: it will not change
 hx.P().BindText(label)                  // follows the signal
 ```
 
-Inside an event handler it is fine and does not warn.
+Inside an event handler it is fine and does not warn. The server engine does not track signals, so it never warns.
 
 ## The UI does not update after I change a slice or a map
 
@@ -66,11 +74,11 @@ Use `wasm.Underlying(node)` after the node has been rendered. Before that it is 
 
 You waited for the answer inside an event handler. The answer can only be handled after the handler returns, so waiting there blocks it forever. Run the request in a goroutine (`go func() { ... }()`) or inside an `hx.Action`, which does it for you. See [Forms and requests](forms-and-requests.md).
 
-## `hx: requests can only be made in the browser`
+## `hxhttp: requests can only be made in the browser`
 
 `hxhttp.Do` (and anything that uses it) was called on a server. Requests only happen in the browser. Code shared with the server can build the `Action`, but it must not call `Run` while rendering. Event handlers never run on a server, so this normally means a request was started during the build.
 
-## `hx: network error`
+## `hxhttp: network error`
 
 The browser could not reach the server, or it blocked the answer. The usual cause is CORS: if the API is on another origin the server has to allow it. Open the network tab of the browser to see the real reason.
 
@@ -88,11 +96,12 @@ A form with files needs `enctype="multipart/form-data"`. `hxhttp.FormOf` sends i
 
 ## Limits worth knowing
 
-- **The DOM half is WASM only.** `wasm.New`, `wasm.NewFromId`, `wasm.Hydrate`, `wasm.Underlying` and the DOM renderer need `GOOS=js GOARCH=wasm`. The core (signals, nodes, `ssr.Render`) builds everywhere, so a server can render the UI. See [Server rendering](server-rendering.md).
+- **The DOM half is WASM only.** `wasm.New`, `wasm.NewFromId`, `wasm.Hydrate`, `wasm.EventOf`, `wasm.Underlying` and the DOM renderer need `GOOS=js GOARCH=wasm`. The core (`hx`), the server engine (`hx/ssr`) and the types of `hxhttp` build everywhere, so a server can render the UI. See [Server rendering](server-rendering.md).
 - **`Each` rebuilds its rows.** Use `EachKeyed` when rows have state or the list is long.
 - **No batching of signal writes.** Each `Set` runs its effects right away. DOM updates are still batched once per frame.
 - **`Computed` needs a comparable type.** For slices, maps or structs holding them, use a signal and update it from an effect.
 - **No router, no global store, no component lifecycle hooks.** Components are plain functions, and `node.Effect` + `OnCleanup` cover setup and teardown.
 - **Only a few element constructors.** Use `El("tag")` for the rest. SVG shapes other than `Svg` and `Path` need their own namespace and do not have constructors yet.
-- **Events.** Helpers exist for the common ones; use `On` with `hx.Event("name")` for any other.
+- **Events.** Helpers exist for the common ones; use `On` with `hx.Event("name")` for any other. They do nothing on a server.
+- **Server rendering does not stream, and does not wait for data.** `ssr.Render` writes the whole page from what you give it; load the data first and pass it in.
 - **`wasm.Underlying` type.** Inputs, textareas, selects, options, links, buttons, forms, images, labels, canvases, videos and audios return their specific `honnef` type. Other elements return `*dom.BasicHTMLElement`.

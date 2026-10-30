@@ -62,7 +62,7 @@ Each node has at most one DOM listener per event type. `On` stores the handler a
 
 ## Speed notes
 
-- The Go DOM library `honnef.co/go/js/dom` identifies the type of every value it returns with dozens of JavaScript calls. Hix avoids it when creating and removing nodes and the text node (`domraw.go`), which made rendering 5,000 rows about 3x faster and removing them about 20x faster. Elements you are likely to need typed (inputs, textareas, selects, links, buttons, forms, images...) still come back with their specific type.
+- The Go DOM library `honnef.co/go/js/dom` identifies the type of every value it returns with dozens of JavaScript calls. Hix avoids it when creating and removing nodes and the text node (`wasm/domraw.go`), which made rendering 5,000 rows about 3x faster and removing them about 20x faster. Elements you are likely to need typed (inputs, textareas, selects, links, buttons, forms, images...) still come back with their specific type.
 - Every property change is a single DOM call. Styles are written together in the `style` attribute.
 - `Each` rebuilds its rows when the list signal changes. Use `EachKeyed` to keep them (see [Dynamic UI](dynamic-ui.md#keeping-the-rows-eachkeyed)), or bind each row to its own signal.
 
@@ -76,7 +76,7 @@ Custom renderers are possible: implement `Renderer` (`ScheduleRender` and `Mark`
 
 `hxhttp.Do` uses `XMLHttpRequest`, not `fetch`, because it is the only one that tells you how much of a body has been uploaded. It blocks the goroutine that calls it, and the answer is delivered from the browser through a channel, which is why it cannot be waited for inside an event handler. `Action` wraps it: it runs the function on a goroutine, keeps the state in signals, and cancels the previous run when you start a new one.
 
-The core does not import `encoding/json` or `net/url`: Go keeps every package a program imports even if it is never used, and they would add about 350 KB to every WASM file. JSON lives in `hxjson`.
+`hx` and `hxhttp` do not import `encoding/json` or `net/url`: Go keeps every package a program imports even if it is never used, and `encoding/json` alone adds more than 800 KB to a TinyGo WASM file (measured). JSON lives in `hxjson`, on top of `hxhttp`.
 
 ## Hydration
 
@@ -91,4 +91,4 @@ For each node, in order:
 
 After that the nodes are in the same state as if the browser had created them, and everything above (signals, bindings, `EachKeyed`...) works unchanged.
 
-The core is split by build tags: `dom_wasm.go` and `dom_native.go` give the shared code the DOM-side fields and functions (or empty versions of them on a server).
+The browser engine is split by build tags: `wasm/dom_wasm.go` has the part that talks to the DOM, and `wasm/dom_native.go` gives the rest of the package empty versions of it, so the nodes can be tested without a browser. The core (`hx`) has no build tags at all. A test renders the same UI with both engines and requires the same HTML, since the hydration depends on it.

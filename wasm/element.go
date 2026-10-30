@@ -2,6 +2,8 @@ package wasm
 
 import (
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/deltegui/hx"
 )
@@ -345,6 +347,10 @@ func (element *VNode) BindText(signal hx.Gettable[string]) hx.INode {
 func (element *VNode) Class(classes ...string) hx.INode {
 	for _, create := range classes {
 		if len(create) <= 0 {
+			continue
+		}
+		if strings.ContainsAny(create, " \t\n\r") {
+			log.Printf("hx: Class(%q): a class cannot have spaces, so it is ignored. Pass them separately: Class(\"a\", \"b\")", create)
 			continue
 		}
 		status, ok := element.classes[create]

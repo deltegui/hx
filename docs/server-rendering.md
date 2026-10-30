@@ -20,13 +20,15 @@ A complete, runnable example is in [`examples/ssr`](../examples/ssr).
 
 ## What builds where
 
-There are three packages:
+There are three packages for this:
 
 | | Builds for | Contains |
 |---|---|---|
-| `hx` | every platform | signals, effects, the `INode` interface and the constructors, `Each`/`If`/`EachKeyed`, `OnMount`, `IsServer`, `StateScript`, requests |
+| `hx` | every platform | signals, effects, the `INode` interface and the constructors, `Each`/`If`/`EachKeyed`, `Action`, `Resource`, `OnMount`, `IsServer`, `StateScript`. No build tags, no `syscall/js` |
 | `hx/ssr` | every platform | the engine of the server: `ssr.Render`. No DOM code, no `syscall/js` |
-| `hx/wasm` | `GOOS=js GOARCH=wasm` (the nodes also build elsewhere, for tests) | the engine of the browser: `New`, `NewFromId`, `Hydrate`, `ReadState`, `Underlying`, the DOM renderer |
+| `hx/wasm` | `GOOS=js GOARCH=wasm` (the nodes also build elsewhere, for tests) | the engine of the browser: `New`, `NewFromId`, `Hydrate`, `ReadState`, `EventOf`, `Underlying`, the DOM renderer |
+
+Requests (`hx/hxhttp`, `hx/hxjson`) build everywhere too, but only make a request in the browser.
 
 The UI is written against `hx` only, so one function builds the same tree with either engine. The server imports `hx/ssr` and the browser imports `hx/wasm`. A program imports one of the two: the engine registers itself when it is imported, and mixing nodes of two engines panics.
 
@@ -36,11 +38,11 @@ On the server, `EventContext.Event` is `any` (there is no browser event), and `w
 
 ```
 myapp/
-  app/          the UI. Imports hx. Must NOT import syscall/js or honnef.
+  app/          the UI. Imports only hx. Must NOT import syscall/js or honnef.
     app.go
-  server/       main package for the server (builds natively)
+  server/       main package for the server (builds natively). Imports hx/ssr.
     main.go
-  client/       main package for the browser (builds with GOOS=js GOARCH=wasm)
+  client/       main package for the browser (builds with GOOS=js GOARCH=wasm). Imports hx/wasm.
     main.go
 ```
 
@@ -118,6 +120,44 @@ Both sides have to start from the same state, or the browser would build a UI th
 `StateScript` escapes the JSON, so it can never close its own `<script>` element.
 
 You can use any other way to get the same data to both sides (a fetch, query parameters...). What matters is that `build` is called with equal data.
+
+A `Resource` or a list that loads its data in the browser would start empty, and the first load would change what the server wrote. Give it the server's data instead, with `hx.ResourceWith` or, when it depends on a signal such as a filter or a page, `hx.ResourceForWith`: it starts from that value, does not load when the page opens, and loads again only when the source changes.
+
+## Islands: hydrate a part of the page
+
+A page does not have to be one app. A server-rendered page (a menu, text, a footer) can have several **islands**: elements that the server fills and the browser brings to life, each one with its own state. The rest is plain HTML, and a page with no islands needs no WASM at all.
+
+Write each island as a function of its state, as text, and let both sides call it:
+
+```go
+// shared: builds the island from the JSON the server sent
+func Products(state string) hx.INode {
+	var page Page
+	json.Unmarshal([]byte(state), &page)
+	return productsScreen(page)
+}
+```
+
+```go
+// server: render it inside its element, and send the state next to it
+state, _ := json.Marshal(firstPage)
+html := ssr.Render(func() hx.INode {
+	return hx.Div().Id("island-products").Body(Products(string(state)))
+})
+page := html + hx.StateScript("island-products-state", string(state))
+```
+
+```go
+// browser: hydrate each island the page has, from the state it was rendered with
+state := wasm.ReadState("island-products-state")
+wasm.Hydrate("island-products", func() hx.INode { return Products(state) })
+```
+
+Because both sides build from the same text, the tree is the same and hydration adopts the elements that are there. Some things to keep in mind:
+
+- **Several islands share one WASM program**, so they can share state with a plain package-level signal. A Go WASM cannot load code later, so a site with heavy and light pages usually builds more than one binary (a small one for the pages that are mostly text, a bigger one for the screens) and each page loads the one it needs.
+- **What only the browser can draw** (a chart in a JavaScript library, `localStorage`) goes behind `OnMount` or `OnRendered`, with an empty `_native.go` twin of the file that uses `syscall/js`, as shown in [Project layout](#project-layout). The server sends the empty canvas and the browser draws it when the island is hydrated.
+- **Start from the same value on both sides.** If an island reads something only the browser has (the saved theme, say), begin with a default both sides share and read the real value in `OnMount`. Otherwise the first render differs from the HTML.
 
 ## `OnMount` and `IsServer`
 

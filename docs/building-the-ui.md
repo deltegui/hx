@@ -32,6 +32,8 @@ root = wasm.New(someElement)
 
 You can mount several roots. They are independent.
 
+Mounting belongs to the browser engine (`hx/wasm`). On a server there is nothing to mount: the UI is written with `ssr.Render` (see [Server rendering](server-rendering.md)).
+
 ## Elements
 
 There are constructors for the common ones:
@@ -112,6 +114,7 @@ el.On(hx.EventDblClick, func(ctx hx.EventContext) { ... })
 
 Things to know:
 
+- Handlers are ignored on a server: there is nobody to click.
 - Calling `On` again for the same event **replaces** the handler. There is only one listener per event.
 - Handlers run untracked: reading signals inside them never creates a dependency.
 - A render is scheduled after every handler.
@@ -203,4 +206,4 @@ canvas.OnRendered(func() {
 })
 ```
 
-`OnRendered` runs after the renderer has finished the whole frame, so the rest of the page is there too. It runs again if the node is removed and later put back, and `OnRemoved` is its pair. Neither runs while rendering on a server. If the UI is only disposed with its root (the nodes are not removed), use `OnCleanup`. With `Hydrate`, `OnRendered` runs once the page has been adopted.
+`OnRendered` runs after the renderer has finished the whole frame, so the rest of the page is there too. It runs again if the node is removed and later put back, and `OnRemoved` is its pair. Neither runs while rendering on a server. If the UI is only disposed with its root (the nodes are not removed), use `OnCleanup`. With `wasm.Hydrate`, `OnRendered` runs once the page has been adopted.

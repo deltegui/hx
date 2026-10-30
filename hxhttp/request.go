@@ -1,22 +1,25 @@
+// Package hxhttp makes requests from the UI. In the browser, Do uses
+// XMLHttpRequest, with bodies for forms and files, progress, timeout and cancel.
+//
+// The types (Request, Response, Body, File...) build on every platform, so code
+// shared with a server can use them; Do only works in the browser (see
+// xhr_wasm.go) and on a server it returns ErrNotInBrowser.
+//
+// It does not import encoding/json or net/url on purpose: Go keeps the packages
+// a program imports even when they are not used, and encoding/json alone adds
+// more than 800 KB to a WASM file built with TinyGo. JSON is in the hxjson
+// package.
 package hxhttp
 
 import (
 	"errors"
 	"fmt"
-	"github.com/deltegui/hx"
 	"sort"
 	"strings"
 	"time"
-)
 
-// Package hxhttp makes requests from the UI: XMLHttpRequest in the browser, with
-// bodies for forms and files, progress, timeout and cancel. This file has the types for talking to a server from the UI. The requests
-// themselves are made by Do, which only works in the browser (see xhr_wasm.go).
-// The types build everywhere, so code shared with a server can use them.
-//
-// It does not import encoding/json or net/url on purpose: Go keeps the packages
-// a program imports even when they are not used, and they would add hundreds of
-// kilobytes to every WASM file. JSON is in the hxjson package.
+	"github.com/deltegui/hx"
+)
 
 // ErrNotInBrowser is what Do returns when the code runs on a server.
 var ErrNotInBrowser = errors.New("hxhttp: requests can only be made in the browser")
@@ -144,7 +147,7 @@ func (b *Body) encode() (contentType string, data []byte, err error) {
 	case bodyValues:
 		return "application/x-www-form-urlencoded", []byte(encodeValues(b.values)), nil
 	}
-	return "", nil, errors.New("hx: this body is built by the browser")
+	return "", nil, errors.New("hxhttp: this body is built by the browser")
 }
 
 // File is a file the user chose in a file input.

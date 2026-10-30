@@ -1,6 +1,6 @@
 # Recipes
 
-Complete examples you can copy. Each function returns a node, so mount it with `wasm.NewFromId("app").Body(recipe())`. All of them are checked to compile against the current API.
+Complete examples you can copy. Each function returns a node, so mount it with `wasm.NewFromId("app").Body(recipe())`. All of them compile against the current API. The snippets leave out the imports: they use `fmt`, `github.com/deltegui/hx`, `github.com/deltegui/hx/wasm` and, in a few, `slices`, `strings`, `time`, `syscall/js` and `honnef.co/go/js/dom/v2`.
 
 ## Counter
 

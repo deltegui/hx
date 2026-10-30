@@ -24,8 +24,8 @@ Try it with JavaScript turned off in the browser: the form still works, files in
 | `app/app.go` | The UI: the form, the list of contacts, and a "Requests" section. Shared. |
 | `app/model.go` | The types and `Validate`, used by the server and by the browser. |
 | `app/browser_wasm.go`, `app/browser_native.go` | The two things that need the browser (`PreventDefault`, `form.reset()`), one file for each side. |
-| `server/main.go` | `ssr.Render`, the form handler (HTML or JSON, CSRF, uploads), and the endpoints of the lab. |
-| `client/main.go` | `hx.Hydrate`. |
+| `server/main.go` | `ssr.Render` (engine `hx/ssr`), the form handler (HTML or JSON, CSRF, uploads), and the endpoints of the lab. |
+| `client/main.go` | `wasm.Hydrate`. |
 | `check.mjs` | The checks. |
 
 ## What it shows

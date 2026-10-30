@@ -1,6 +1,16 @@
 # API reference
 
-Everything is in the package `github.com/deltegui/hx`. The parts that need the browser are marked "browser only" and only exist for `GOOS=js GOARCH=wasm`; the rest builds on every platform. The same text is available with `GOOS=js GOARCH=wasm go doc -all github.com/deltegui/hx`.
+Hix is five packages. Unless a section says otherwise, a name is in `github.com/deltegui/hx`.
+
+| Package | What is in it |
+|---|---|
+| `hx` | The API a UI is written against: signals, effects, `INode` and the constructors, operators, `Action`, `Resource`, `OnMount`. Builds on every platform. |
+| `hx/wasm` | The engine of the browser: mounting, hydration, the DOM renderer. The part that touches the DOM only exists for `GOOS=js GOARCH=wasm`. |
+| `hx/ssr` | The engine of the server: `ssr.Render`. Builds on every platform. |
+| `hx/hxhttp` | Requests. `Do` only works in the browser; the types build everywhere. |
+| `hx/hxjson` | JSON on top of `hxhttp`. |
+
+The same text is available with `go doc -all` on each package (use `GOOS=js GOARCH=wasm` for `hx/wasm`).
 
 ## Signals
 
@@ -10,6 +20,7 @@ Everything is in the package `github.com/deltegui/hx`. The parts that need the b
 | `(*SignalT[T]) Get() T` | Read it. Inside an effect it subscribes the effect. |
 | `(*SignalT[T]) Set(v T)` | Write it and run the effects that read it, now. Always notifies. |
 | `(*SignalT[T]) Update(fn func(T) T)` | `Set(fn(current))`. Does not subscribe. |
+| `(*SignalT[T]) Subscribers() int` | How many effects follow it. For tests. |
 | `Computed[T comparable](fn func() T) *ComputedT[T]` | Value derived from other signals. Notifies only when the result changes. |
 | `(*ComputedT[T]) Get() T` | Read it. Subscribes like a signal. |
 | `Value[T](v T) ValueWrapper[T]` | A constant that can be used as a `Gettable`. `Get`/`Set` are plain, not reactive. |
@@ -22,6 +33,7 @@ Everything is in the package `github.com/deltegui/hx`. The parts that need the b
 |---|---|
 | `EffectFunc(fn func()) *Effect` | Run `fn` now and again when a signal it read changes. |
 | `(*Effect) Dispose()` | Stop it for good, with its child effects. |
+| `(*Effect) Disposed() bool` | Whether it has been stopped. |
 | `CreateRoot[T](fn func(dispose func()) T) T` | Run `fn` in a new root. Effects created in it, outside other effects, belong to the root. |
 | `(*Root) Dispose()` | Stop the root's effects and run its cleanups. Safe to call twice. (The `dispose` argument of `CreateRoot` is this method.) |
 | `OnCleanup(fn func())` | Run `fn` before the current effect re-runs or when it is disposed (or when the current root is). |
@@ -35,8 +47,11 @@ The package `hx` has the API a UI is written against. A program also imports one
 | | |
 |---|---|
 | `hx/wasm` | The browser. Mounting and hydration (below). |
-| `hx/ssr` | A server. `ssr.Render`, `ssr.Node`. |
-| `UseEngine(Engine)` | What an engine calls when it is imported. You only need it in a test. |
+| `hx/ssr` | A server. `ssr.Render(build)` and `ssr.Node(root)` write HTML. |
+| `Engine` | `interface{ Element(tag, namespace) INode; Fragment() INode; OnMount(fn); IsServer() bool; Tracks() bool }`. What an engine implements. |
+| `UseEngine(Engine)` | What an engine calls when it is imported. You only need it in a test; `wasm.Use()` and `ssr.Use()` do it for their engine. |
+
+On a server (`Tracks()` is false) a signal is a plain value, a `Computed` is calculated on every read, an effect runs once, and `CreateRoot`, `OnCleanup` and `Untrack` do nothing. See [Reactivity](reactivity.md#on-a-server).
 
 ## Mounting (`hx/wasm`)
 
@@ -47,6 +62,7 @@ The package `hx` has the API a UI is written against. A program also imports one
 | `wasm.NewWithRenderer(element, renderer)` / `wasm.NewFromIdWithRenderer(id, renderer)` | Same with a custom `wasm.Renderer`. |
 | `wasm.NewWithoutMount(tag string, renderer Renderer) *wasm.VNode` | A node that is not in the DOM (for `wasm.StringRenderer`, in tests). |
 | `wasm.Underlying(node hx.INode) dom.Element` | The DOM element of a node, once rendered (`nil` before). |
+| `wasm.EventOf(ctx hx.EventContext) dom.Event` | The event of the browser that a handler received. |
 
 ## Elements
 
@@ -79,7 +95,7 @@ All of them return `INode`, so they can be chained in any order, except the ones
 |---|---|
 | `Attribute(key, value)` / `RemoveAttribute(key)` | Empty values are valid. |
 | `GetAttribute(key) string` / `HaveAttribute(key, value) bool` | Returns a value. State after the next render. |
-| `Class(names...)` / `RemoveClass(names...)` | |
+| `Class(names...)` / `RemoveClass(names...)` | Empty names are skipped. A name with a space is ignored with a warning: pass them separately. |
 | `ClassIf(name, on bool)` | Add or remove. |
 | `HaveClass(name) bool` | Returns a value. |
 | `Style(key, value)` / `RemoveStyle(key)` | |
@@ -158,16 +174,16 @@ Package `hxhttp`. Browser only for the request itself: on a server `hxhttp.Do` r
 | `Body` | what a request sends |
 | `TextBody(contentType, text)` | text |
 | `FormValues(map[string][]string)` | `application/x-www-form-urlencoded` (a `url.Values` works) |
-| `FormOf(form *VNode)` | the fields and files of a `<form>` in the page (`multipart/form-data`) |
+| `FormOf(form hx.INode)` | the fields and files of a `<form>` in the page (`multipart/form-data`) |
 | `NewMultipart()` | `.Field(name, value)`, `.File(name, file)`, `.Bytes(name, filename, type, data)`, `.Body()` |
-| `FilesOf(input *VNode) []File` | the files chosen in a file input |
+| `FilesOf(input hx.INode) []File` | the files chosen in a file input |
 | `File` | `Name`, `Size`, `Type`, `Bytes(ctx) ([]byte, error)` |
-| `IsCanceled(err)`, `IsTimeout(err)` | what ended a request |
+| `hx.IsCanceled(err)`, `hx.IsTimeout(err)` | what ended a request (these two are in `hx`) |
 | `ErrNotInBrowser` | `Do` was called on a server |
 
 ### `hxjson`: package `github.com/deltegui/hx/hxjson`
 
-JSON, in its own package so programs that do not use it do not carry `encoding/json` (about 250 KB).
+JSON, in its own package so programs that do not use it do not carry `encoding/json` (more than 800 KB with TinyGo).
 
 | | |
 |---|---|
@@ -176,7 +192,7 @@ JSON, in its own package so programs that do not use it do not carry `encoding/j
 | `hxjson.Send[T](ctx, method, url, body) (T, error)` | send JSON, decode the answer. A status that is not 2xx is an `*hxhttp.HTTPError` |
 | `hxjson.Get[T](ctx, url)`, `hxjson.Post[T](ctx, url, body)` | shortcuts |
 
-### Actions and resources
+### Actions and resources (package `hx`)
 
 | | |
 |---|---|

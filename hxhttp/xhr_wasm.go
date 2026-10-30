@@ -45,7 +45,7 @@ func Do(ctx context.Context, request Request) (response Response, err error) {
 	// syscall/js panics when the browser throws. Report it as an error.
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			response, err = Response{}, fmt.Errorf("hx: request failed: %v", recovered)
+			response, err = Response{}, fmt.Errorf("hxhttp: request failed: %v", recovered)
 		}
 	}()
 
@@ -110,10 +110,10 @@ func Do(ctx context.Context, request Request) (response Response, err error) {
 		finish(outcome{response: readResponse(xhr)})
 	})
 	listen(xhr, "error", func([]js.Value) {
-		finish(outcome{err: errors.New("hx: network error")})
+		finish(outcome{err: errors.New("hxhttp: network error")})
 	})
 	listen(xhr, "timeout", func([]js.Value) {
-		finish(outcome{err: fmt.Errorf("hx: the request took more than %v: %w", request.Timeout, context.DeadlineExceeded)})
+		finish(outcome{err: fmt.Errorf("hxhttp: the request took more than %v: %w", request.Timeout, context.DeadlineExceeded)})
 	})
 	listen(xhr, "abort", func([]js.Value) {
 		finish(outcome{err: context.Canceled})
@@ -192,7 +192,7 @@ func (b *Body) toJS() (payload js.Value, contentType string, err error) {
 	case bodyForm:
 		element, ok := underlying(b.form)
 		if b.form == nil || !ok {
-			return js.Undefined(), "", errors.New("hx: FormOf needs a form that is already in the page")
+			return js.Undefined(), "", errors.New("hxhttp: FormOf needs a form that is already in the page")
 		}
 		// The browser sets the content type, with the boundary.
 		return js.Global().Get("FormData").New(element), "", nil
@@ -216,7 +216,7 @@ func (b *Body) toJS() (payload js.Value, contentType string, err error) {
 		}
 		return formData, "", nil
 	}
-	return js.Undefined(), "", errors.New("hx: unknown body")
+	return js.Undefined(), "", errors.New("hxhttp: unknown body")
 }
 
 // FilesOf returns the files chosen in a file input. The input has to be in the

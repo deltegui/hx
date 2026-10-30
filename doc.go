@@ -22,7 +22,7 @@
 // Signal holds a value, Computed derives a value from other signals and
 // EffectFunc runs a function again when the signals it read change.
 // Effects have an owner so they can be stopped: the node they belong to
-// (VNode.Effect, BindText, BindValue), another effect, or a root (CreateRoot).
+// (INode.Effect, BindText, BindValue), another effect, or a root (CreateRoot).
 //
 // # Building the UI
 //
@@ -33,9 +33,9 @@
 //
 // # Forms and requests
 //
-// Do makes a request in the browser, with bodies for forms and files, progress,
-// timeout and cancel. Action and Resource keep the state of a request in
-// signals. The package hxjson sends and reads JSON. A form is plain HTML, so it
+// hxhttp.Do makes a request in the browser, with bodies for forms and files,
+// progress, timeout and cancel. Action and Resource keep the state of a request
+// in signals. The package hxjson sends and reads JSON. A form is plain HTML, so it
 // also works without WASM when the page was rendered by a server.
 //
 // # Engines

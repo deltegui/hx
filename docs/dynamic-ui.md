@@ -179,6 +179,10 @@ When `Body` replaces children, or an `If` turns false, the removed nodes and all
 
 You do not need to clean anything. If you create effects with `hx.EffectFunc` instead, see [Reactivity: ownership](reactivity.md#who-stops-an-effect-ownership).
 
+## The same code on a server
+
+Everything on this page also builds with the server engine (`hx/ssr`). There the effects run once, so a conditional or a list renders what it holds at that moment, and nothing follows the signals afterwards. That is what lets a page be rendered by the server and hydrated by the browser from the same functions. See [Server rendering](server-rendering.md).
+
 ## Patterns
 
 **Derived UI state.** Put the logic in a `Computed`, bind the result:
@@ -188,7 +192,7 @@ remaining := hx.Computed(func() string { return fmt.Sprintf("%d left", countOpen
 hx.Span().BindText(remaining)
 ```
 
-**Component = a function that returns a node.** State lives in signals created inside the function (private) or passed in (shared):
+**Component = a function that returns a node.** State lives in signals created inside the function (private) or passed in (shared). A component that only uses `hx` works with both engines, so it can go in a library:
 
 ```go
 func counter(label string) hx.INode {

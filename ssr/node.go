@@ -3,6 +3,7 @@ package ssr
 import (
 	"fmt"
 	"html"
+	"log"
 	"sort"
 	"strings"
 
@@ -94,6 +95,10 @@ func (n *node) Selected() hx.INode                { return n.Attribute("selected
 func (n *node) Class(classes ...string) hx.INode {
 	for _, class := range classes {
 		if class == "" {
+			continue
+		}
+		if strings.ContainsAny(class, " \t\n\r") {
+			log.Printf("hx: Class(%q): a class cannot have spaces, so it is ignored. Pass them separately: Class(\"a\", \"b\")", class)
 			continue
 		}
 		if n.classes == nil {

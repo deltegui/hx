@@ -222,3 +222,10 @@ func TestCheckedRendersAndBinds(t *testing.T) {
 		t.Fatalf("\n got %s\nwant %s", got, want)
 	}
 }
+
+func TestAClassWithASpaceIsIgnored(t *testing.T) {
+	got := Render(func() hx.INode { return hx.Div().Class("a b", "c") })
+	if got != `<div class="c"></div>` {
+		t.Fatalf("got %s", got)
+	}
+}

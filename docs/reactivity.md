@@ -136,6 +136,19 @@ e := hx.EffectFunc(func() { ... })
 e.Dispose() // never runs again; also disposes its child effects
 ```
 
+## On a server
+
+All of the above is what the browser engine (`hx/wasm`) does. The server engine (`hx/ssr`) builds the UI once and writes it, so it does not follow who reads what. The same code gives the same first render, but the reactivity is switched off:
+
+| | Browser | Server |
+|---|---|---|
+| `Signal` | a value that notifies | a plain value: `Get` and `Set` just read and write |
+| `Computed` | calculated when its signals change | calculated again on every `Get` |
+| `EffectFunc`, `node.Effect`, `Bind*` | run again when a signal changes | run once |
+| `CreateRoot`, `OnCleanup`, `Untrack` | own and stop effects | do nothing (there is nothing to stop) |
+
+Because nothing is global, many UIs can be rendered at the same time. See [Server rendering](server-rendering.md).
+
 ## Rules of thumb
 
 - Keep state in signals, derive with `Computed`, react with effects.

@@ -1,6 +1,6 @@
 # Forms and requests
 
-How to send something to a server: a form, a file, some JSON. Hix gives you three levels, and you can mix them:
+How to send something to a server: a form, a file, some JSON. Requests live in `github.com/deltegui/hx/hxhttp`, and JSON in `github.com/deltegui/hx/hxjson`. Hix gives you three levels, and you can mix them:
 
 | Level | What | Needs WASM |
 |---|---|---|
@@ -92,7 +92,7 @@ A status that is not 2xx is **not** an error of `Do`: you got an answer. `Do` fa
 | `hxhttp.ErrNotInBrowser` | `Do` was called on a server |
 | `context.Canceled` (`hx.IsCanceled(err)`) | the context was canceled |
 | `context.DeadlineExceeded` (`hx.IsTimeout(err)`) | the timeout passed |
-| another | the network failed: `hx: network error` |
+| another | the network failed: `hxhttp: network error` |
 
 Cancel a request by canceling its context:
 
@@ -177,7 +177,7 @@ if err := hxjson.Decode(response, &result); err != nil { // works for a 422 too
 }
 ```
 
-**Why a separate package?** `encoding/json` adds about 250 KB to a WASM file (and `net/url` another 95 KB), and Go keeps a package as soon as something imports it, even if the program never calls it. The core of Hix does not import them, so a program that does not use requests pays about 4 KB for all of server rendering, hydration and requests together. A program that sends JSON imports `hxjson` and pays for JSON, which it would anyway.
+**Why a separate package?** `encoding/json` decodes into any type using reflection, and Go keeps a package as soon as something imports it, even if the program never calls it. Measured with TinyGo (`--no-debug -opt=z`): a program that makes a request with `hxhttp.Do` grows by about 54 KB, and one that also uses `hxjson` grows by about 860 KB. `hx` and `hxhttp` do not import `encoding/json` or `net/url`, so a program that sends forms (`FormOf`, `FormValues`) or text pays nothing for JSON. A program that sends JSON imports `hxjson` and pays for JSON, which it would anyway.
 
 For other headers on a JSON request, build the `Request` yourself with `hxjson.Body`:
 
@@ -290,6 +290,7 @@ items.Set(v)     // replace the value without loading (after an action changed t
 | `hx.Resource(fetch)` | loads when the UI is in the browser |
 | `hx.ResourceWith(initial, fetch)` | starts from `initial` (usually what the server rendered) and does not load until `Refetch` |
 | `hx.ResourceFor(source, fetch)` | loads when the UI is in the browser, and again each time the `source` signal changes. A load in progress is canceled by the next one |
+| `hx.ResourceForWith(initial, source, fetch)` | the same, starting from `initial` (what the server rendered). The first load is skipped, since `initial` is already the answer for the source as it is; it loads again when the source changes |
 
 "When the UI is in the browser" means: right away in a normal render, after the hydration when the page was rendered by a server, and never while rendering on a server. So a `Resource` can sit in code shared by both.
 

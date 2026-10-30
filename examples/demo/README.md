@@ -1,6 +1,6 @@
 # Hix demo
 
-A big example that uses almost everything in Hix. It is a separate Go module that depends on the library in the parent folder (`replace github.com/deltegui/hx => ../..`).
+A big example that uses almost everything in Hix. It is a separate Go module that depends on the library in the parent folder (`replace github.com/deltegui/hx => ../..`). It runs in the browser only, so it imports the engine `hx/wasm`.
 
 ```sh
 make serve      # builds main.wasm and serves http://localhost:8080

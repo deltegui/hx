@@ -125,7 +125,7 @@ type Effect struct {
 // EffectFunc runs fn now and again each time a signal read by fn changes.
 // An effect created inside another effect is its child and is disposed when the parent runs again.
 // An effect created inside CreateRoot is owned by the root. Any other effect lives forever unless you call Dispose.
-// For effects tied to a node use VNode.Effect instead.
+// For effects tied to a node use INode.Effect instead.
 func EffectFunc(fn func()) *Effect {
 	if !tracking {
 		fn()

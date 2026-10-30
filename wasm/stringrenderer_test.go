@@ -364,3 +364,13 @@ func TestBindOnCheckedRegistersAChangeHandler(t *testing.T) {
 		t.Fatal("BindOnChecked must listen to change")
 	}
 }
+
+func TestAClassWithASpaceIsIgnored(t *testing.T) {
+	d := hx.Div().Class("a b", "c")
+	if got := render(d); got != `<div class="c"></div>` {
+		t.Fatalf("got %s", got)
+	}
+	if d.HaveClass("a b") {
+		t.Fatal("the class with a space must not be kept")
+	}
+}

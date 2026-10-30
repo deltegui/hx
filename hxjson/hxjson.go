@@ -1,8 +1,9 @@
 // Package hxjson sends and reads JSON with hxhttp.Do.
 //
-// It is a separate package on purpose. encoding/json adds around 250 KB to a
-// WASM file, and Go keeps it as soon as a package imports it, even if the code
-// never calls it. The programs that do not use JSON do not pay for it.
+// It is a separate package on purpose. encoding/json adds more than 800 KB to a
+// WASM file built with TinyGo, and Go keeps it as soon as a package imports it,
+// even if the code never calls it. The programs that do not use JSON do not pay
+// for it.
 //
 // The functions block until the answer arrives, so call them from a goroutine,
 // for example inside an hx.Action.

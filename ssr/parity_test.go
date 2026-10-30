@@ -16,6 +16,9 @@ func TestEnginesWriteTheSameHTML(t *testing.T) {
 		"attributes and classes": func() hx.INode {
 			return hx.Div().Id("x").Class("b", "a", "").Style("color", "red").Style("a", "1").Attribute("title", `a"b<c`).Text("a<b & c")
 		},
+		"a class with a space is ignored": func() hx.INode {
+			return hx.Div().Class("a b", "c", "")
+		},
 		"removed things": func() hx.INode {
 			return hx.Div().Class("a", "b").RemoveClass("a").Style("x", "1").RemoveStyle("x").Attribute("k", "v").RemoveAttribute("k")
 		},

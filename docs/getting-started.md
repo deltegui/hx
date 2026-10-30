@@ -72,7 +72,7 @@ Three things to notice:
 </html>
 ```
 
-The `div` with `id="app"` is the mount point passed to `hx.NewFromId`.
+The `div` with `id="app"` is the mount point passed to `wasm.NewFromId`.
 
 ## 4. Build and serve
 
@@ -97,12 +97,14 @@ TinyGo has its own `wasm_exec.js`. Do not mix it with the one from Go.
 |---|---|
 | Go | ~4.5 MB |
 | TinyGo | ~1.7 MB |
-| TinyGo, optimized | ~555 KB (about 155 KB gzip) |
+| TinyGo, optimized | ~560 KB (about 156 KB gzip) |
 
 ## Where to go next
 
 - [Reactivity](reactivity.md): signals, computed values and effects.
 - [Building the UI](building-the-ui.md): elements, text, attributes, events, forms.
 - [Dynamic UI](dynamic-ui.md): bindings, conditionals and lists.
+- [Forms and requests](forms-and-requests.md): forms that work with and without WASM, files, JSON.
+- [Server rendering](server-rendering.md): render on a Go server and hydrate in the browser.
 - [Recipes](recipes.md): complete examples (todo list, tabs, timer...).
 - [`examples/demo`](../examples/demo): a larger runnable example with a tab for each feature and a page of checks against the real DOM.

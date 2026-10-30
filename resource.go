@@ -46,6 +46,17 @@ func ResourceWith[T any](initial T, fetch func(ctx context.Context) (T, error)) 
 //		return hxjson.Get[[]Item](ctx, "/api/search?q="+url.QueryEscape(q))
 //	})
 func ResourceFor[S, T any](source Gettable[S], fetch func(ctx context.Context, source S) (T, error)) *ResourceT[T] {
+	return resourceFor(source, fetch, nil)
+}
+
+// ResourceForWith is ResourceFor with a value to start from, usually the one the
+// server rendered. The first load is skipped, since the value is already the
+// answer for the source as it is now; it loads again each time the source changes.
+func ResourceForWith[S, T any](initial T, source Gettable[S], fetch func(ctx context.Context, source S) (T, error)) *ResourceT[T] {
+	return resourceFor(source, fetch, &initial)
+}
+
+func resourceFor[S, T any](source Gettable[S], fetch func(ctx context.Context, source S) (T, error), initial *T) *ResourceT[T] {
 	action := Action(fetch)
 	r := &ResourceT[T]{
 		value:   action.value,
@@ -54,9 +65,20 @@ func ResourceFor[S, T any](source Gettable[S], fetch func(ctx context.Context, s
 		cancel:  action.Cancel,
 		settled: action.setSettled,
 	}
+	if initial != nil {
+		r.value.Set(*initial)
+	}
 	r.refetch = func() { action.Run(UntrackGet(source)) }
 	OnMount(func() {
-		EffectFunc(func() { action.Run(source.Get()) })
+		skip := initial != nil
+		EffectFunc(func() {
+			arg := source.Get() // read even when skipped, so the effect follows the source
+			if skip {
+				skip = false
+				return
+			}
+			action.Run(arg)
+		})
 	})
 	return r
 }

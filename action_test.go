@@ -273,6 +273,39 @@ func TestResourceForReloadsWhenTheSourceChanges(t *testing.T) {
 	waitFor(t, settled, "the refetch")
 }
 
+func TestResourceForWithSkipsTheFirstLoadAndFollowsTheSource(t *testing.T) {
+	query := Signal("a")
+	seen := make(chan string, 10)
+	var r *ResourceT[string]
+	dispose := CreateRoot(func(dispose func()) func() {
+		r = ResourceForWith("from the server", query, func(ctx context.Context, q string) (string, error) {
+			seen <- q
+			return strings.ToUpper(q), nil
+		})
+		return dispose
+	})
+	defer dispose()
+	settled := settledChannel(r)
+
+	select {
+	case q := <-seen:
+		t.Fatalf("the first load must be skipped, loaded %q", q)
+	case <-time.After(30 * time.Millisecond):
+	}
+	if got := UntrackGet(r.Value()); got != "from the server" {
+		t.Fatalf("value=%q", got)
+	}
+
+	query.Set("b")
+	if got := <-seen; got != "b" {
+		t.Fatalf("a change of the source must load, got %q", got)
+	}
+	waitFor(t, settled, "the load")
+	if got := UntrackGet(r.Value()); got != "B" {
+		t.Fatalf("value=%q", got)
+	}
+}
+
 func TestIsCanceledAndIsTimeout(t *testing.T) {
 	if !IsCanceled(context.Canceled) || IsCanceled(context.DeadlineExceeded) || !IsTimeout(context.DeadlineExceeded) {
 		t.Fatal("wrong classification")

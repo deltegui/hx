@@ -188,6 +188,7 @@ JSON, in its own package so programs that do not use it do not carry `encoding/j
 | `Resource[T](fetch) *ResourceT[T]` | Data from a server, loaded when the UI is in the browser |
 | `ResourceWith[T](initial, fetch)` | Same, starting from `initial` and not loading by itself |
 | `ResourceFor[S, T](source, fetch)` | Loads again each time the `source` signal changes |
+| `ResourceForWith[S, T](initial, source, fetch)` | Same, starting from `initial` (what the server rendered): the first load is skipped |
 | `(*ResourceT) Value()`, `Loading()`, `Error()` | Signals |
 | `Refetch()`, `Cancel()`, `Set(v)` | Load again / stop / replace the value |
 

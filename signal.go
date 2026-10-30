@@ -1,6 +1,7 @@
 package hx
 
 import (
+	"fmt"
 	"log"
 	"runtime"
 	"sync"
@@ -20,58 +21,166 @@ var (
 	mu            sync.Mutex
 )
 
+// The effects that have to run because something they read changed wait in a
+// queue, and flush runs them. A change marks what depends on it first and only
+// then are the effects run, so an effect never sees half of a change.
+var (
+	queueMu    sync.Mutex
+	queue      []*Effect
+	batchDepth int
+	flushing   bool
+)
+
 func accessEffect(action func(*Effect)) {
 	mu.Lock()
 	defer mu.Unlock()
 	action(currentEffect)
 }
 
-// subscribe registers the current effect as a subscriber of subscribers.
+// source is what an effect can read: a signal or a computed value. An effect
+// remembers the version of each source it read, and runs again only if one of
+// them has a different version.
+type source interface {
+	subscribersOf() map[*Effect]struct{}
+	version() uint64
+	refresh() // makes the value current: a computed value recalculates if it is stale
+}
+
+// dep is a source an effect read, and the version it had then.
+type dep struct {
+	src source
+	ver uint64
+}
+
+// subscribe registers the current effect as a subscriber of the source.
 // The subscription is removed when the effect cleans up.
-func subscribe(subscribers map[*Effect]struct{}) {
+func subscribe(src source) {
 	if !tracking {
 		return
 	}
 	accessEffect(func(currentEffect *Effect) {
 		if currentEffect == nil {
 			if !untrack {
-				_, file, line, ok := runtime.Caller(4)
-				if ok {
-					log.Printf("Cannot call Get if there is no effect (%s:%d)", file, line)
-				} else {
-					log.Printf("Cannot call Get if there is no effect")
+				where := ""
+				if _, file, line, ok := runtime.Caller(4); ok {
+					where = fmt.Sprintf(" (%s:%d)", file, line)
 				}
+				message := "Cannot call Get if there is no effect" + where + ": the value is read once and the UI will not follow it. " +
+					"Use BindText or BindValue, an effect (node.Effect, hx.Dynamic), or UntrackGet if reading it once is what you want."
+				if strictReads {
+					panic("hx: " + message)
+				}
+				log.Print(message)
 			}
 			return
 		}
+		subscribers := src.subscribersOf()
 		if _, ok := subscribers[currentEffect]; ok {
 			return
 		}
 		subscribers[currentEffect] = struct{}{}
+		currentEffect.deps = append(currentEffect.deps, dep{src, src.version()})
 		currentEffect.cleanUps = append(currentEffect.cleanUps, func() {
 			delete(subscribers, currentEffect)
 		})
 	})
 }
 
-// notify schedules every subscriber. Subscribers are copied first because
-// running an effect unsubscribes and subscribes it again.
+// notify marks everything that depends on a source that changed and, unless a
+// batch is open or effects are already running, runs the effects that are due.
 func notify(subscribers map[*Effect]struct{}) {
 	if len(subscribers) == 0 {
 		return
 	}
-	effects := make([]*Effect, 0, len(subscribers))
+	// Marking does not touch the subscriptions, so the map can be walked as it is.
 	for effect := range subscribers {
-		effects = append(effects, effect)
+		effect.markStale()
 	}
-	for _, effect := range effects {
-		effect.schedule()
+	flushIfIdle()
+}
+
+func flushIfIdle() {
+	queueMu.Lock()
+	idle := batchDepth == 0
+	queueMu.Unlock()
+	if idle {
+		flush()
 	}
+}
+
+// flush runs the effects in the queue, one after another, until it is empty. An
+// effect that is in the queue runs only if what it read really changed. Effects
+// that are made due while it runs wait in the same queue, so only one flush runs
+// at a time and a Set inside an effect does not nest.
+func flush() {
+	queueMu.Lock()
+	if flushing {
+		queueMu.Unlock()
+		return
+	}
+	flushing = true
+	queueMu.Unlock()
+	defer func() {
+		queueMu.Lock()
+		flushing = false
+		queueMu.Unlock()
+	}()
+
+	for {
+		queueMu.Lock()
+		if len(queue) == 0 {
+			queueMu.Unlock()
+			return
+		}
+		effect := queue[0]
+		queue = queue[1:]
+		// An effect created inside another one dies when the other one runs again.
+		// If one of its owners is waiting for its turn, it goes after it: running
+		// it now would be wasted, since it is about to be disposed.
+		if effect.ownerIsWaiting() {
+			queue = append(queue, effect)
+			queueMu.Unlock()
+			continue
+		}
+		effect.queued = false
+		queueMu.Unlock()
+
+		if !effect.disposed && effect.depsChanged() {
+			effect.run()
+		}
+	}
+}
+
+// Batch runs fn and holds back the effects until it ends: any number of Set
+// calls inside it run each affected effect once, at the end, and the effects see
+// the final values. A Computed read inside fn is always current. Batches nest:
+// the effects run when the outermost one ends, even if fn panics.
+//
+// Event handlers and the end of an Action already run in a batch.
+func Batch(fn func()) {
+	if !tracking {
+		fn()
+		return
+	}
+	queueMu.Lock()
+	batchDepth++
+	queueMu.Unlock()
+	defer func() {
+		queueMu.Lock()
+		batchDepth--
+		end := batchDepth == 0
+		queueMu.Unlock()
+		if end {
+			flush()
+		}
+	}()
+	fn()
 }
 
 // SignalT is a reactive value. Create it with Signal.
 type SignalT[T any] struct {
 	value       T
+	ver         uint64
 	subscribers map[*Effect]struct{}
 }
 
@@ -89,19 +198,25 @@ func Signal[T any](initial T) *SignalT[T] {
 // Get returns the value. Inside an effect (EffectFunc, node.Effect, Bind*, Computed) it subscribes the effect to the signal.
 // Outside of an effect it just returns the value, and logs a warning unless it runs inside Untrack or an event handler.
 func (signal *SignalT[T]) Get() T {
-	subscribe(signal.subscribers)
+	subscribe(signal)
 	return signal.value
 }
+
+func (signal *SignalT[T]) subscribersOf() map[*Effect]struct{} { return signal.subscribers }
+func (signal *SignalT[T]) version() uint64                     { return signal.ver }
+func (signal *SignalT[T]) refresh()                            {}
 
 // Subscribers is how many effects follow the signal. It is meant for tests: an
 // effect that was disposed must not be counted.
 func (signal *SignalT[T]) Subscribers() int { return len(signal.subscribers) }
 
-// Set changes the value and runs, right away, every effect that read the signal.
-// It always notifies, even if the new value equals the old one.
+// Set changes the value and runs the effects that read the signal. Outside of an
+// effect and of a Batch they have run when Set returns; inside one, they run when
+// it ends. It always notifies, even if the new value equals the old one.
 func (signal *SignalT[T]) Set(v T) {
 	signal.value = v
-	signal.notify()
+	signal.ver++
+	notify(signal.subscribers)
 }
 
 // Update sets the value to fn(current value). It does not subscribe the current effect.
@@ -109,17 +224,40 @@ func (signal *SignalT[T]) Update(fn func(T) T) {
 	signal.Set(fn(signal.value))
 }
 
-func (signal *SignalT[T]) notify() {
-	notify(signal.subscribers)
-}
-
 // Effect is a function that runs again when any signal it read changes.
 type Effect struct {
-	fn          func()
-	isScheduled bool
-	disposed    bool
-	childs      []*Effect
-	cleanUps    []func()
+	fn       func()
+	owner    *Effect // the effect that was running when this one was made
+	disposed bool
+	running  bool
+	queued   bool // it is in the queue of effects that are due
+	stale    bool // a computed value that may be out of date
+	computed bool
+	// downstream is, for a computed value, who reads it. A stale mark goes on to them.
+	downstream map[*Effect]struct{}
+	deps       []dep
+	childs     []*Effect
+	cleanUps   []func()
+}
+
+// newEffect makes an effect and gives it its owner: the effect that is running,
+// or else the root.
+func newEffect(fn func(), computed bool) *Effect {
+	e := &Effect{
+		fn:       fn,
+		computed: computed,
+		childs:   make([]*Effect, 0),
+		cleanUps: make([]func(), 0),
+	}
+	mu.Lock()
+	if currentEffect != nil {
+		e.owner = currentEffect
+		currentEffect.childs = append(currentEffect.childs, e)
+	} else if currentRoot != nil {
+		currentRoot.effects = append(currentRoot.effects, e)
+	}
+	mu.Unlock()
+	return e
 }
 
 // EffectFunc runs fn now and again each time a signal read by fn changes.
@@ -131,18 +269,7 @@ func EffectFunc(fn func()) *Effect {
 		fn()
 		return &Effect{disposed: true}
 	}
-	e := &Effect{
-		fn:       fn,
-		childs:   make([]*Effect, 0),
-		cleanUps: make([]func(), 0),
-	}
-	mu.Lock()
-	if currentEffect != nil {
-		currentEffect.childs = append(currentEffect.childs, e)
-	} else if currentRoot != nil {
-		currentRoot.effects = append(currentRoot.effects, e)
-	}
-	mu.Unlock()
+	e := newEffect(fn, false)
 	e.run()
 	return e
 }
@@ -151,16 +278,70 @@ func (e *Effect) run() {
 	mu.Lock()
 	prev := currentEffect
 	currentEffect = e
+	e.running = true
 	mu.Unlock()
 
 	defer func() {
 		mu.Lock()
 		currentEffect = prev
+		e.running = false
 		mu.Unlock()
 	}()
 
 	e.clean()
 	e.fn()
+}
+
+// ownerIsWaiting tells if an effect that owns this one is in the queue.
+func (e *Effect) ownerIsWaiting() bool {
+	for owner := e.owner; owner != nil; owner = owner.owner {
+		if owner.queued && !owner.disposed {
+			return true
+		}
+	}
+	return false
+}
+
+// markStale says that something this effect reads has changed. A computed value
+// passes it on to the ones that read it; an effect waits in the queue. One that
+// is running ignores it: an effect does not run itself again for what it wrote.
+func (e *Effect) markStale() {
+	mu.Lock()
+	skip := e.disposed || e.running
+	mu.Unlock()
+	if skip {
+		return
+	}
+	if e.computed {
+		if e.stale {
+			return
+		}
+		e.stale = true
+		for target := range e.downstream {
+			target.markStale()
+		}
+		return
+	}
+	queueMu.Lock()
+	if !e.queued {
+		e.queued = true
+		queue = append(queue, e)
+	}
+	queueMu.Unlock()
+}
+
+// depsChanged tells if something the effect read has a new version. It brings
+// each computed value up to date first, in the order they were read, so a
+// computed value that comes out the same does not wake the effect.
+func (e *Effect) depsChanged() bool {
+	for i := 0; i < len(e.deps); i++ {
+		d := e.deps[i]
+		d.src.refresh()
+		if d.src.version() != d.ver {
+			return true
+		}
+	}
+	return false
 }
 
 // clean disposes the child effects and removes the subscriptions
@@ -175,6 +356,7 @@ func (e *Effect) clean() {
 		cleanfn()
 	}
 	e.cleanUps = make([]func(), 0)
+	e.deps = e.deps[:0]
 }
 
 // Disposed tells if the effect has been stopped.
@@ -185,15 +367,6 @@ func (e *Effect) Disposed() bool { return e.disposed }
 func (e *Effect) Dispose() {
 	e.disposed = true
 	e.clean()
-}
-
-func (e *Effect) schedule() {
-	if e.isScheduled || e.disposed {
-		return
-	}
-	e.isScheduled = true
-	defer func() { e.isScheduled = false }()
-	e.run()
 }
 
 // Root owns the effects that are created inside CreateRoot, outside of any
@@ -262,13 +435,18 @@ func OnCleanup(fn func()) {
 
 // ComputedT is a value derived from signals. Create it with Computed.
 type ComputedT[T comparable] struct {
-	fn              func() T // set when nothing is tracked: the value is calculated on every read
-	value           T
-	dependentEffect *Effect
-	subscribers     map[*Effect]struct{}
+	fn          func() T // set when nothing is tracked: the value is calculated on every read
+	value       T
+	ver         uint64
+	node        *Effect // the effect that calculates it, owned like any effect
+	subscribers map[*Effect]struct{}
 }
 
-// Computed creates a value derived from other signals or computeds. It is recalculated when its dependencies change and only notifies its own subscribers when the result is different.
+// Computed creates a value derived from other signals or computeds. It is
+// calculated when it is created and again, when it is read, after something it
+// depends on changed. It only wakes the effects that read it when the result is
+// different, and one that reads it always gets the current value, even in the
+// middle of a Batch.
 func Computed[T comparable](fn func() T) *ComputedT[T] {
 	if !tracking {
 		return &ComputedT[T]{fn: fn}
@@ -276,15 +454,14 @@ func Computed[T comparable](fn func() T) *ComputedT[T] {
 	c := &ComputedT[T]{
 		subscribers: make(map[*Effect]struct{}),
 	}
-
-	c.dependentEffect = EffectFunc(func() {
-		newVal := fn()
-		if newVal != c.value {
-			c.value = newVal
-			c.notify()
+	c.node = newEffect(func() {
+		if next := fn(); next != c.value {
+			c.value = next
+			c.ver++
 		}
-	})
-
+	}, true)
+	c.node.downstream = c.subscribers
+	c.node.run()
 	return c
 }
 
@@ -293,16 +470,28 @@ func (c *ComputedT[T]) Get() T {
 	if c.fn != nil {
 		return c.fn()
 	}
-	subscribe(c.subscribers)
+	c.refresh()
+	subscribe(c)
 	return c.value
+}
+
+func (c *ComputedT[T]) subscribersOf() map[*Effect]struct{} { return c.subscribers }
+func (c *ComputedT[T]) version() uint64                     { return c.ver }
+
+// refresh calculates the value again if something it depends on changed.
+func (c *ComputedT[T]) refresh() {
+	n := c.node
+	if n == nil || n.disposed || !n.stale {
+		return
+	}
+	n.stale = false
+	if n.depsChanged() {
+		n.run()
+	}
 }
 
 // Subscribers is how many effects follow the computed value, like SignalT.Subscribers.
 func (c *ComputedT[T]) Subscribers() int { return len(c.subscribers) }
-
-func (c *ComputedT[T]) notify() {
-	notify(c.subscribers)
-}
 
 // Untrack runs fn without subscribing the current effect to the signals fn reads.
 func Untrack(fn func()) {

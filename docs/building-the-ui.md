@@ -115,9 +115,9 @@ el.On(hx.EventDblClick, func(ctx hx.EventContext) { ... })
 Things to know:
 
 - Handlers are ignored on a server: there is nobody to click.
-- Calling `On` again for the same event **replaces** the handler. There is only one listener per event.
+- Calling `On` again for the same event **replaces** the handler. A binding of the same event (`BindOnInput`, `BindOnChange`, `BindOnChecked`) is not replaced: it has its own place, and it runs first, so `Input().BindOnInput(name).OnInput(f)` writes the signal and then calls `f`, which already finds the new value in it.
 - Handlers run untracked: reading signals inside them never creates a dependency.
-- A render is scheduled after every handler.
+- A handler runs in a [batch](reactivity.md#batching-several-changes-at-once): however many signals it sets, each effect that depends on them runs once, when it ends. A render is scheduled after every handler.
 - Read the event's value or key with the underlying event:
 
 ```go

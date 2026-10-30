@@ -1,6 +1,7 @@
 package wasm
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/deltegui/hx"
@@ -372,5 +373,119 @@ func TestAClassWithASpaceIsIgnored(t *testing.T) {
 	}
 	if d.HaveClass("a b") {
 		t.Fatal("the class with a space must not be kept")
+	}
+}
+
+// A binding to a signal and a handler of the user on the same event must both
+// run. Before, the second one replaced the first and the signal stopped following
+// the element without any warning.
+func TestBindingAndHandlerOfTheSameEventBothRun(t *testing.T) {
+	var order []string
+	sel := hx.Select().(*VNode)
+	sel.onBound(hx.EventChange, func(hx.EventContext) { order = append(order, "binding") })
+	sel.OnChange(func(hx.EventContext) { order = append(order, "handler") })
+	sel.eventListeners[hx.EventChange].fire(hx.EventContext{})
+	if got := strings.Join(order, ","); got != "binding,handler" {
+		t.Fatalf("ran %q, want the binding first and then the handler", got)
+	}
+
+	// the other order of calls gives the same result
+	order = nil
+	other := hx.Select().(*VNode)
+	other.OnChange(func(hx.EventContext) { order = append(order, "handler") })
+	other.onBound(hx.EventChange, func(hx.EventContext) { order = append(order, "binding") })
+	other.eventListeners[hx.EventChange].fire(hx.EventContext{})
+	if got := strings.Join(order, ","); got != "binding,handler" {
+		t.Fatalf("other order of calls: ran %q", got)
+	}
+}
+
+func TestEachSlotOfAListenerIsReplacedOnItsOwn(t *testing.T) {
+	var order []string
+	d := hx.Input().(*VNode)
+	d.onBound(hx.EventInput, func(hx.EventContext) { order = append(order, "binding 1") })
+	d.onBound(hx.EventInput, func(hx.EventContext) { order = append(order, "binding 2") })
+	d.OnInput(func(hx.EventContext) { order = append(order, "handler 1") })
+	d.OnInput(func(hx.EventContext) { order = append(order, "handler 2") })
+	d.eventListeners[hx.EventInput].fire(hx.EventContext{})
+	if got := strings.Join(order, ","); got != "binding 2,handler 2" {
+		t.Fatalf("ran %q, want the last binding and the last handler", got)
+	}
+}
+
+func TestTheBindMethodsAndOnShareOneDOMListener(t *testing.T) {
+	sig := hx.Signal("")
+	d := hx.Input().BindOnInput(sig).OnInput(func(hx.EventContext) {}).(*VNode)
+	if len(d.eventListeners) != 1 {
+		t.Fatalf("%d listeners for one event", len(d.eventListeners))
+	}
+	l := d.eventListeners[hx.EventInput]
+	if l.bound == nil || l.handler == nil {
+		t.Fatal("the two slots must be set")
+	}
+}
+
+// A handler that sets several signals makes each effect that depends on them
+// run once, when the handler ends, and the binding of the same event goes in the
+// same batch.
+func TestAHandlerRunsInABatch(t *testing.T) {
+	a, b, typed := hx.Signal(0), hx.Signal(0), hx.Signal("")
+	runs := 0
+	hx.EffectFunc(func() { runs++; a.Get(); b.Get(); typed.Get() })
+
+	input := hx.Input().OnInput(func(hx.EventContext) {
+		a.Set(1)
+		b.Set(1)
+		if runs != 1 {
+			t.Fatalf("an effect ran in the middle of the handler: runs=%d", runs)
+		}
+	}).(*VNode)
+	input.onBound(hx.EventInput, func(hx.EventContext) { typed.Set("x") })
+	input.eventListeners[hx.EventInput].fire(hx.EventContext{})
+
+	if runs != 2 {
+		t.Fatalf("runs=%d, want 2: one at creation and one for the whole event", runs)
+	}
+}
+
+func TestDynamicIsBuiltAgainWhenItsSignalsChange(t *testing.T) {
+	items := hx.Signal([]string{"a"})
+	inner := hx.Signal("x")
+	ul := hx.Ul().Body(hx.Dynamic(func() hx.INode {
+		return hx.Each(items, func(i int, v string) hx.INode {
+			return hx.Li().BindText(hx.Computed(func() string { return v + inner.Get() }))
+		})
+	}))
+	if got := render(ul); got != `<ul><li>ax</li></ul>` {
+		t.Fatalf("got %s", got)
+	}
+	items.Set([]string{"a", "b"})
+	if got := render(ul); got != `<ul><li>ax</li><li>bx</li></ul>` {
+		t.Fatalf("after the change: %s", got)
+	}
+	// the bindings of the rows that were replaced do not stay subscribed
+	before := inner.Subscribers()
+	items.Set([]string{"a", "b", "c"})
+	items.Set([]string{"a"})
+	if inner.Subscribers() >= before+3 || inner.Subscribers() > 1 {
+		t.Fatalf("subscribers of inner: %d before, %d after; the rows that left must be released", before, inner.Subscribers())
+	}
+}
+
+func TestDynamicCanShowNothing(t *testing.T) {
+	show := hx.Signal(false)
+	d := hx.Div().Body(hx.Dynamic(func() hx.INode {
+		return hx.IfFn(show, func() hx.INode { return hx.P().Text("hi") })
+	}))
+	if got := render(d); got != `<div></div>` {
+		t.Fatalf("got %s", got)
+	}
+	show.Set(true)
+	if got := render(d); got != `<div><p>hi</p></div>` {
+		t.Fatalf("got %s", got)
+	}
+	show.Set(false)
+	if got := render(d); got != `<div></div>` {
+		t.Fatalf("got %s", got)
 	}
 }

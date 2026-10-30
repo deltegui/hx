@@ -14,6 +14,24 @@ func discard(node INode) {
 	}
 }
 
+// Dynamic is a part of the UI that is built again when the signals that build
+// reads change. It is what `node.Effect(func() { node.Body(...) })` does, without
+// the node: build runs in an effect owned by the fragment, whatever it reads is
+// followed, and the effects and bindings it creates are stopped each time it
+// runs again. build can return nil to show nothing.
+//
+//	hx.Div().Body(
+//		hx.H2().Text("Todos"),
+//		hx.Dynamic(func() hx.INode {
+//			return hx.IfFn(isEmpty, func() hx.INode { return hx.P().Text("Nothing to do") })
+//		}),
+//	)
+func Dynamic(build func() INode) INode {
+	host := Noop()
+	host.Effect(func() { host.Body(build()) })
+	return host
+}
+
 // If returns child when the condition is true, otherwise nil. The child is
 // already built, so when the condition is false it is discarded.
 func If(condition Gettable[bool], child INode) INode {

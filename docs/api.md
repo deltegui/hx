@@ -18,10 +18,10 @@ The same text is available with `go doc -all` on each package (use `GOOS=js GOAR
 |---|---|
 | `Signal[T](initial T) *SignalT[T]` | Create a reactive value. |
 | `(*SignalT[T]) Get() T` | Read it. Inside an effect it subscribes the effect. |
-| `(*SignalT[T]) Set(v T)` | Write it and run the effects that read it, now. Always notifies. |
+| `(*SignalT[T]) Set(v T)` | Write it and run the effects that read it: when `Set` returns, or when the open handler, effect or `Batch` ends. Always notifies. |
 | `(*SignalT[T]) Update(fn func(T) T)` | `Set(fn(current))`. Does not subscribe. |
 | `(*SignalT[T]) Subscribers() int` | How many effects follow it. For tests. |
-| `Computed[T comparable](fn func() T) *ComputedT[T]` | Value derived from other signals. Notifies only when the result changes. |
+| `Computed[T comparable](fn func() T) *ComputedT[T]` | Value derived from other signals. Calculated again when read after a change, so it is never out of date. Wakes effects only when the result changes. |
 | `(*ComputedT[T]) Get() T` | Read it. Subscribes like a signal. |
 | `Value[T](v T) ValueWrapper[T]` | A constant that can be used as a `Gettable`. `Get`/`Set` are plain, not reactive. |
 | `Gettable[T]` | `interface{ Get() T }`. Signals, computed values and `Value` satisfy it. |
@@ -38,6 +38,8 @@ The same text is available with `go doc -all` on each package (use `GOOS=js GOAR
 | `(*Root) Dispose()` | Stop the root's effects and run its cleanups. Safe to call twice. (The `dispose` argument of `CreateRoot` is this method.) |
 | `OnCleanup(fn func())` | Run `fn` before the current effect re-runs or when it is disposed (or when the current root is). |
 | `Untrack(fn func())` | Run `fn` without subscribing the current effect. |
+| `RunCallback(fn func())` / `InCallback() bool` | Mark `fn` as running inside a callback of JavaScript (an event handler, a frame). Hix does it for its own; do it for the body of a `js.FuncOf` of yours. `hxhttp.Do` fails with `ErrInCallback` there instead of deadlocking. |
+| `Batch(fn func())` | Run `fn` and hold the effects back until it ends: each affected effect runs once, with the final values. Nests. Event handlers and the end of an `Action` are already in one. |
 | `UntrackGet[T](g Gettable[T]) T` | Read without subscribing. |
 
 ## Engines
@@ -109,7 +111,7 @@ All of them return `INode`, so they can be chained in any order, except the ones
 
 | | |
 |---|---|
-| `On(event Event, handler func(EventContext))` | One handler per event; calling it again replaces it. |
+| `On(event Event, handler func(EventContext))` | One handler per event; calling it again replaces it. It does not replace the binding of the event (`BindOnInput`...), which runs first. |
 | `OnClick`, `OnInput`, `OnChange`, `OnKeyUp`, `OnKeyDown`, `OnSubmit`, `OnFocus`, `OnBlur` | Shortcuts for `On`. |
 
 Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSubmit EventFocus EventBlur EventDblClick EventMouseEnter EventMouseLeave`. `Event` is a string, so `hx.Event("scroll")` works.
@@ -139,6 +141,7 @@ Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSub
 
 | | |
 |---|---|
+| `Dynamic(build func() INode) INode` | A part of the UI built again when the signals `build` reads change. `build` can return `nil`. |
 | `If(cond Gettable[bool], child INode) INode` | `child` or `nil`. The child is already built, the unused one is discarded. |
 | `Show(cond, a, b INode) INode` | `a` or `b`. |
 | `IfFn(cond, build func() INode) INode` | Builds only when true. |
@@ -180,6 +183,7 @@ Package `hxhttp`. Browser only for the request itself: on a server `hxhttp.Do` r
 | `File` | `Name`, `Size`, `Type`, `Bytes(ctx) ([]byte, error)` |
 | `hx.IsCanceled(err)`, `hx.IsTimeout(err)` | what ended a request (these two are in `hx`) |
 | `ErrNotInBrowser` | `Do` was called on a server |
+| `ErrInCallback` | `Do` was called inside an event handler, where it cannot wait for the answer |
 
 ### `hxjson`: package `github.com/deltegui/hx/hxjson`
 

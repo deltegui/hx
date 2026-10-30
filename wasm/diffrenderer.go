@@ -41,7 +41,7 @@ func (r *DiffRenderer) Mark(element *VNode) {
 func (r *DiffRenderer) createRaf() {
 	r.rafCallback = js.FuncOf(func(this js.Value, args []js.Value) any {
 		defer func() { r.scheduled = false }()
-		r.render()
+		hx.RunCallback(r.render)
 		return nil
 	})
 }
@@ -449,10 +449,12 @@ func (element *VNode) updateEventListeners() {
 		}
 		listener.attached = true
 		listener.wrapper = element.domElement.AddEventListener(string(event), false, func(e dom.Event) {
-			hx.Untrack(func() {
-				listener.handler(hx.EventContext{
-					Target: element,
-					Event:  e,
+			hx.RunCallback(func() {
+				hx.Untrack(func() {
+					listener.fire(hx.EventContext{
+						Target: element,
+						Event:  e,
+					})
 				})
 			})
 			element.scheludeRender()

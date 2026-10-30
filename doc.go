@@ -23,6 +23,8 @@
 // EffectFunc runs a function again when the signals it read change.
 // Effects have an owner so they can be stopped: the node they belong to
 // (INode.Effect, BindText, BindValue), another effect, or a root (CreateRoot).
+// A change never reaches an effect half done, and Batch makes any number of
+// changes run each effect once; event handlers and Actions already do.
 //
 // # Building the UI
 //

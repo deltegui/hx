@@ -3,11 +3,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"syscall/js"
 
 	"github.com/deltegui/hx"
+	"github.com/deltegui/hx/hxhttp"
 	"github.com/deltegui/hx/wasm"
 	"honnef.co/go/js/dom/v2"
 )
@@ -569,6 +572,81 @@ func allChecks() []check {
 			opts.Set([]string{"z", "c", "y"})
 			settle()
 			return eq("value after the options changed", el.Get("value").String(), "c")
+		}},
+
+		{"a click that sets signals updates each effect once, and nothing sees half a change", func(sb *sandbox) error {
+			a, other := hx.Signal(1), hx.Signal(0)
+			b := hx.Computed(func() int { return a.Get() + 1 })
+			c := hx.Computed(func() int { return a.Get() * 10 })
+			var seen []string
+			shown := hx.Div().Id("shown")
+			shown.Effect(func() {
+				seen = append(seen, fmt.Sprintf("%d/%d", b.Get(), c.Get()))
+				shown.Text(seen[len(seen)-1])
+			})
+			runs := 0
+			counter := hx.Span().Id("counter")
+			counter.Effect(func() {
+				runs++
+				counter.Textf("%d-%d", a.Get(), other.Get())
+			})
+			button := hx.Button().Text("go").OnClick(func(hx.EventContext) {
+				a.Set(2)
+				other.Set(5)
+			})
+			sb.root.Body(hx.Div().Body(button, shown, counter))
+			settle()
+			seen, runs = nil, 0
+			sb.click("button")
+			settle()
+			// the change of a reaches `shown` through two computed values: one run, with both new
+			if err := eq("what the effect saw", strings.Join(seen, ","), "3/20"); err != nil {
+				return err
+			}
+			// two Sets in the handler: the effect that reads both runs once
+			if err := eq("runs of the effect that reads both", runs, 1); err != nil {
+				return err
+			}
+			return eq("the DOM", sb.el.QuerySelector("#shown").TextContent()+" "+sb.el.QuerySelector("#counter").TextContent(), "3/20 2-5")
+		}},
+
+		{"Do inside an event handler fails with a clear error instead of stopping Go", func(sb *sandbox) error {
+			var got error
+			clicks := 0
+			sb.root.Body(hx.Button().Text("go").OnClick(func(hx.EventContext) {
+				clicks++
+				_, got = hxhttp.Do(context.Background(), hxhttp.Request{URL: "index.html"})
+			}))
+			settle()
+			sb.click("button")
+			settle()
+			if !errors.Is(got, hxhttp.ErrInCallback) {
+				return fmt.Errorf("Do in a handler returned %v, want ErrInCallback", got)
+			}
+			// the program is still alive: another click is handled
+			sb.click("button")
+			settle()
+			return eq("clicks handled after the error", clicks, 2)
+		}},
+
+		{"a binding to a signal and a handler of the same event both run", func(sb *sandbox) error {
+			text := hx.Signal("")
+			seen := []string{}
+			input := hx.Input().Type("text").BindOnInput(text).OnInput(func(hx.EventContext) {
+				// the binding ran first, so the signal already has the new value
+				seen = append(seen, hx.UntrackGet[string](text))
+			})
+			sb.root.Body(input)
+			settle()
+			el := sb.el.QuerySelector("input").Underlying()
+			for _, v := range []string{"a", "ab"} {
+				el.Set("value", v)
+				el.Call("dispatchEvent", js.Global().Get("Event").New("input", map[string]any{"bubbles": true}))
+			}
+			if err := eq("the signal follows the input", hx.UntrackGet[string](text), "ab"); err != nil {
+				return err
+			}
+			return eq("the handler saw each new value", strings.Join(seen, ","), "a,ab")
 		}},
 
 		{"OnRendered runs once the element is in the document", func(sb *sandbox) error {

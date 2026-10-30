@@ -27,7 +27,7 @@ Hix doesn’t try to be a full-fledged framework — it’s just a library for w
 
 If you need a full framework to build PWAs or complex applications, try go-app.
 
-**[Live demo](https://deltegui.github.io/hx/)** — the code is in [`examples/demo`](examples/demo): a tab per feature and 33 checks that run against the real DOM, in your browser (about 288K of WASM over the network, built with TinyGo).
+**[Live demo](https://deltegui.github.io/hx/)** — the code is in [`examples/demo`](examples/demo): a tab per feature and 36 checks that run against the real DOM, in your browser (about 298K of WASM over the network, built with TinyGo).
 
 ## A taste
 
@@ -144,15 +144,15 @@ Thanks to TinyGo and Hix simplicity, the example shown above ("A taste") can ach
 |---------------------------|---------------------------------------------------------------------------|------|
 | Go full                   | `GOOS=js GOARCH=wasm go build -o main.wasm main.go`                       | 4.5M |
 | TinyGo                    | `GOOS=js GOARCH=wasm tinygo build -o main.wasm main.go `                  | 1.7M |
-| Optimized TinyGo          | `GOOS=js GOARCH=wasm tinygo build --no-debug -opt=z -o main.wasm main.go` | 560K |
-| Optimized TinyGo + GZip   | `gzip -k -9 main.wasm`                                                    | 156K |
-| Optimized TinyGo + brotli | `brotli -f -q 11 main.wasm`                                               | 114K |
+| Optimized TinyGo          | `GOOS=js GOARCH=wasm tinygo build --no-debug -opt=z -o main.wasm main.go` | 567K |
+| Optimized TinyGo + GZip   | `gzip -k -9 main.wasm`                                                    | 158K |
+| Optimized TinyGo + brotli | `brotli -f -q 11 main.wasm`                                               | 116K |
 
-Measured with Go 1.27.3 and TinyGo 0.43.0. For a bigger program, the [live demo](https://deltegui.github.io/hx/) ([`examples/demo`](examples/demo), every feature, 33 checks) is 6.4M with Go and 1.1M with optimized TinyGo (288K gzip, 200K brotli). Both builds pass the 33 checks in Chromium.
+Measured with Go 1.27.3 and TinyGo 0.43.0. For a bigger program, the [live demo](https://deltegui.github.io/hx/) ([`examples/demo`](examples/demo), every feature, 36 checks) is 6.5M with Go and 1.2M with optimized TinyGo (298K gzip, 206K brotli). Both builds pass the 36 checks in Chromium.
 
 ## Status
 
-Hix is young and used in a side project. The API is small on purpose. The main limits are: the browser engine only runs as WASM (the core and the server engine build anywhere), and signal writes are not batched. See [Troubleshooting and limits](docs/troubleshooting.md).
+Hix is young and used in a side project. The API is small on purpose. The main limit is that the browser engine only runs as WASM (the core and the server engine build anywhere). See [Troubleshooting and limits](docs/troubleshooting.md).
 
 Run the tests with:
 
@@ -161,7 +161,7 @@ go test -race ./...                                                         # th
 GOOS=js GOARCH=wasm go test -exec "$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./...   # also in WASM (needs Node.js)
 ```
 
-The DOM code is checked in a real browser: [`examples/demo`](examples/demo) has 33 checks, [`examples/ssr`](examples/ssr) (`make check`) checks the hydration, and [`examples/forms`](examples/forms) (`make check`) checks the forms with JavaScript off and on. A test also checks that the two engines write the same HTML for the same UI, which is what hydration needs.
+The DOM code is checked in a real browser: [`examples/demo`](examples/demo) has 36 checks, [`examples/ssr`](examples/ssr) (`make check`) checks the hydration, and [`examples/forms`](examples/forms) (`make check`) checks the forms with JavaScript off and on. A test also checks that the two engines write the same HTML for the same UI, which is what hydration needs.
 
 ## Why Hix?
 

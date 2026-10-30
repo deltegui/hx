@@ -49,6 +49,29 @@ Each time `todos` changes the effect runs and sets a new body. `hx.Each` calls `
 
 The old children are removed and their effects and listeners are released.
 
+**`hx.Dynamic` is the same without the node and the effect.** It takes a function that returns the part of the UI, builds it, and builds it again when the signals it reads change:
+
+```go
+list := hx.Ul().Body(hx.Dynamic(func() hx.INode {
+	return hx.Each(todos, func(i int, todo string) hx.INode {
+		return hx.Li().Text(todo)
+	})
+}))
+```
+
+It can return `nil` to show nothing, so a conditional is just as short, and it can sit anywhere a child can:
+
+```go
+hx.Div().Body(
+	hx.H2().Text("Todos"),
+	hx.Dynamic(func() hx.INode {
+		return hx.IfFn(isEmpty, func() hx.INode { return hx.P().Text("Nothing to do") })
+	}),
+)
+```
+
+What `build` creates (bindings, effects, computed values) is stopped each time it runs again, and it works the same on a server, where it runs once.
+
 ## Conditionals
 
 ```go

@@ -3,6 +3,7 @@ package hx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -313,5 +314,38 @@ func TestIsCanceledAndIsTimeout(t *testing.T) {
 	wrapped := errors.Join(errors.New("x"), context.Canceled)
 	if !IsCanceled(wrapped) {
 		t.Fatal("must see through wrapping")
+	}
+}
+
+// The end of a run is one update for the UI: an effect that reads the result and
+// pending never sees one without the other, and runs once.
+func TestTheEndOfAnActionIsOneUpdate(t *testing.T) {
+	save := Action(func(ctx context.Context, n int) (int, error) { return n * 2, nil })
+	settled := make(chan struct{}, 10)
+	save.setSettled(func() { settled <- struct{}{} }) // after the batch of the end of the run
+	var seen []string
+	banner := Signal("")
+	save.OnSuccess(func(result int, _ int) { banner.Set(fmt.Sprintf("saved %d", result)) })
+	dispose := CreateRoot(func(dispose func()) func() {
+		EffectFunc(func() {
+			seen = append(seen, fmt.Sprintf("pending=%v value=%d banner=%q", save.Pending().Get(), save.Value().Get(), banner.Get()))
+		})
+		return dispose
+	})
+	defer dispose()
+
+	save.Run(21)
+	waitFor(t, settled, "the action")
+
+	// The state of the end is one update (never "not running" without the answer),
+	// and what the callback sets is the next one.
+	want := []string{
+		`pending=false value=0 banner=""`,
+		`pending=true value=0 banner=""`,
+		`pending=false value=42 banner=""`,
+		`pending=false value=42 banner="saved 42"`,
+	}
+	if strings.Join(seen, " | ") != strings.Join(want, " | ") {
+		t.Fatalf("the effect saw:\n  %s\nwant:\n  %s", strings.Join(seen, "\n  "), strings.Join(want, "\n  "))
 	}
 }

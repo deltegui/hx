@@ -36,12 +36,29 @@ const (
 	flagChildren
 )
 
-// eventListener is the handler of an event. The handler can be replaced at
-// any moment. The DOM listener (wrapper) is only registered once per DOM element.
+// eventListener is what an element does for an event. It has two slots, so a
+// binding to a signal (BindOnInput...) and a handler of the user (On, OnInput...)
+// do not replace each other. Each slot can be replaced at any moment. The DOM
+// listener (wrapper) is only registered once per DOM element.
 type eventListener struct {
-	handler  func(hx.EventContext)
+	bound    func(hx.EventContext) // what a Bind*On* method sets: it writes to a signal
+	handler  func(hx.EventContext) // what On and its shortcuts set
 	attached bool
 	domListener
+}
+
+// fire runs the binding first, so the handler of the user finds the signal
+// already updated. It all runs in a batch: however many signals the handler
+// sets, each effect that depends on them runs once, when it ends.
+func (l *eventListener) fire(ctx hx.EventContext) {
+	hx.Batch(func() {
+		if l.bound != nil {
+			l.bound(ctx)
+		}
+		if l.handler != nil {
+			l.handler(ctx)
+		}
+	})
 }
 
 // binding is an Effect owned by a node. It is disposed when the node leaves the
@@ -310,16 +327,29 @@ func (element *VNode) BodyList(childs []hx.INode) hx.INode {
 }
 
 // On sets the handler of an event. Calling it again for the same event replaces the handler.
-// The handler runs untracked, and a render is scheduled after it.
+// The handler runs untracked, and a render is scheduled after it. A binding of
+// the same event (BindOnInput, BindOnChange, BindOnChecked) is kept: it runs
+// first, and then the handler.
 func (element *VNode) On(event hx.Event, handler func(ctx hx.EventContext)) hx.INode {
-	listener, ok := element.eventListeners[event]
-	if ok {
-		listener.handler = handler
-		return element
-	}
-	element.eventListeners[event] = &eventListener{handler: handler}
-	element.setDirty(flagEventListeners)
+	element.listener(event).handler = handler
 	return element
+}
+
+// onBound sets the binding of an event, the other slot of its listener.
+func (element *VNode) onBound(event hx.Event, fn func(ctx hx.EventContext)) hx.INode {
+	element.listener(event).bound = fn
+	return element
+}
+
+// listener is the listener of the event, which is made when it is first needed.
+func (element *VNode) listener(event hx.Event) *eventListener {
+	listener, ok := element.eventListeners[event]
+	if !ok {
+		listener = &eventListener{}
+		element.eventListeners[event] = listener
+		element.setDirty(flagEventListeners)
+	}
+	return listener
 }
 
 // OnClick is On(hx.EventClick, handler).
@@ -528,7 +558,7 @@ func (element *VNode) BindChecked(signal hx.Gettable[bool]) hx.INode {
 
 // BindOnChecked writes the checked state of the element to the signal on every change event.
 func (element *VNode) BindOnChecked(signal hx.Settable[bool]) hx.INode {
-	return element.On(hx.EventChange, func(ctx hx.EventContext) { signal.Set(targetChecked(ctx)) })
+	return element.onBound(hx.EventChange, func(ctx hx.EventContext) { signal.Set(targetChecked(ctx)) })
 }
 
 // BindValue keeps the value of an input, textarea or option in sync with the
@@ -546,12 +576,12 @@ func (element *VNode) BindValue(signal hx.Gettable[string]) hx.INode {
 
 // BindOnInput writes the value of the element to the signal on every input event.
 func (element *VNode) BindOnInput(signal hx.Settable[string]) hx.INode {
-	return element.On(hx.EventInput, func(ctx hx.EventContext) { signal.Set(targetValue(ctx)) })
+	return element.onBound(hx.EventInput, func(ctx hx.EventContext) { signal.Set(targetValue(ctx)) })
 }
 
 // BindOnChange writes the value of the element to the signal on every change event.
 func (element *VNode) BindOnChange(signal hx.Settable[string]) hx.INode {
-	return element.On(hx.EventChange, func(ctx hx.EventContext) { signal.Set(targetValue(ctx)) })
+	return element.onBound(hx.EventChange, func(ctx hx.EventContext) { signal.Set(targetValue(ctx)) })
 }
 
 // OnInput is On(hx.EventInput, handler).

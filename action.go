@@ -65,8 +65,10 @@ func (a *ActionT[A, R]) Run(arg A) {
 	a.cancel = cancel
 	a.mu.Unlock()
 
-	a.err.Set(nil)
-	a.pending.Set(true)
+	Batch(func() {
+		a.err.Set(nil)
+		a.pending.Set(true)
+	})
 
 	go func() {
 		defer func() {
@@ -90,20 +92,25 @@ func (a *ActionT[A, R]) Run(arg A) {
 			return // it was canceled or run again, nobody wants this result
 		}
 
-		// The result goes first and pending last, so the UI never sees "not
-		// running" without the answer.
+		// The state of the end of the run changes in one batch, so the UI updates
+		// once and never sees "not running" without the answer. The callback
+		// comes after, when the UI has already reacted, and it is a batch of its own.
 		if err != nil {
-			a.err.Set(err)
-			a.pending.Set(false)
+			Batch(func() {
+				a.err.Set(err)
+				a.pending.Set(false)
+			})
 			if a.onError != nil {
-				a.onError(err, arg)
+				Batch(func() { a.onError(err, arg) })
 			}
 			return
 		}
-		a.value.Set(result)
-		a.pending.Set(false)
+		Batch(func() {
+			a.value.Set(result)
+			a.pending.Set(false)
+		})
 		if a.onSuccess != nil {
-			a.onSuccess(result, arg)
+			Batch(func() { a.onSuccess(result, arg) })
 		}
 	}()
 }
@@ -128,8 +135,10 @@ func (a *ActionT[A, R]) Cancel() {
 func (a *ActionT[A, R]) Reset() {
 	a.Cancel()
 	var zero R
-	a.err.Set(nil)
-	a.value.Set(zero)
+	Batch(func() {
+		a.err.Set(nil)
+		a.value.Set(zero)
+	})
 }
 
 // OnSuccess sets a function that is called, after the state has been updated,

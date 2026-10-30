@@ -39,6 +39,9 @@ type domFile struct {
 //
 // A status that is not 2xx is not an error here; look at Response.OK or Response.Err.
 func Do(ctx context.Context, request Request) (response Response, err error) {
+	if hx.InCallback() {
+		return Response{}, ErrInCallback
+	}
 	if err := ctx.Err(); err != nil {
 		return Response{}, err
 	}
@@ -248,6 +251,9 @@ func FilesOf(input hx.INode) []File {
 
 // Bytes reads the content of the file. It blocks, so call it from a goroutine.
 func (f File) Bytes(ctx context.Context) ([]byte, error) {
+	if hx.InCallback() {
+		return nil, ErrInCallback
+	}
 	buffer, err := await(ctx, f.value.Call("arrayBuffer"))
 	if err != nil {
 		return nil, err

@@ -61,7 +61,7 @@ response, err := hxhttp.Do(ctx, hxhttp.Request{
 
 `Do` makes the request and **waits** for the answer. That is why this matters:
 
-> **Never call `Do` straight from an event handler.** The answer can only be handled after the handler returns, so waiting for it there freezes the page. Run it in a goroutine (`go func() { ... }()`), or, better, inside an `Action`, which does it for you.
+> **Never call `Do` straight from an event handler.** The answer can only be delivered after the handler returns, so waiting for it there would stop the Go program with `fatal error: all goroutines are asleep - deadlock!`, and nothing on the page would respond again. `Do` sees it coming and returns `hxhttp.ErrInCallback` right away, with a message that says what to do. Run it in a goroutine (`go func() { ... }()`), or, better, inside an `Action`, which does it for you.
 
 `Request`:
 
@@ -90,6 +90,7 @@ A status that is not 2xx is **not** an error of `Do`: you got an answer. `Do` fa
 | Error | |
 |---|---|
 | `hxhttp.ErrNotInBrowser` | `Do` was called on a server |
+| `hxhttp.ErrInCallback` | `Do` was called inside an event handler, where it cannot wait for the answer (see above) |
 | `context.Canceled` (`hx.IsCanceled(err)`) | the context was canceled |
 | `context.DeadlineExceeded` (`hx.IsTimeout(err)`) | the timeout passed |
 | another | the network failed: `hxhttp: network error` |
@@ -224,7 +225,7 @@ What an `Action` does for you:
 - **`Cancel()`** stops the run in progress. It does not count as an error.
 - **`Reset()`** cancels, and forgets the error and the result.
 - The error is cleared when a run starts. The last result is kept until there is a new one, so the UI can show it while it reloads.
-- The result is set **before** `Pending` becomes false, so the UI never shows "finished" without the answer.
+- The result and `Pending` change in one batch, so the UI never shows "finished" without the answer, and an effect that reads both runs once.
 
 React to the end of a run, after the signals are up to date:
 
@@ -238,7 +239,7 @@ save.OnError(func(err error, arg Contact) {
 })
 ```
 
-They run on the goroutine of the action. A canceled run calls neither.
+They run on the goroutine of the action, after the UI has reacted to the new state, and each one is a batch of its own. A canceled run calls neither.
 
 ### A form, end to end
 

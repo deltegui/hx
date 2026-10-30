@@ -24,6 +24,13 @@ import (
 // ErrNotInBrowser is what Do returns when the code runs on a server.
 var ErrNotInBrowser = errors.New("hxhttp: requests can only be made in the browser")
 
+// ErrInCallback is what Do returns when it is called inside an event handler, or
+// any other callback of JavaScript. Do waits for the answer, and the page cannot
+// deliver it until the callback returns, so waiting there would stop the Go
+// program with a deadlock. Run it in a goroutine, or in an hx.Action.
+var ErrInCallback = errors.New("hxhttp: Do waits for the answer and cannot do that inside an event handler: " +
+	"the page could not deliver it, and Go would stop with a deadlock. Run it in a goroutine (go func() { ... }()) or in an hx.Action")
+
 // Request describes a request for Do.
 type Request struct {
 	Method string            // GET if empty

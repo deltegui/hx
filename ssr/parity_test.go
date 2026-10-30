@@ -57,6 +57,16 @@ func TestEnginesWriteTheSameHTML(t *testing.T) {
 			return hx.Div().Body(hx.IfFn(hx.Value(false), func() hx.INode { return hx.P().Text("hidden") }), hx.If(hx.Value(true), hx.P().Text("shown")),
 				hx.ShowFn(hx.Value(false), func() hx.INode { return hx.P().Text("a") }, func() hx.INode { return hx.P().Text("b") }))
 		},
+		"dynamic": func() hx.INode {
+			n := hx.Signal(2)
+			return hx.Ul().Body(hx.Dynamic(func() hx.INode {
+				items := []hx.INode{}
+				for i := 0; i < n.Get(); i++ {
+					items = append(items, hx.Li().Textf("row %d", i))
+				}
+				return hx.Noop().BodyList(items)
+			}))
+		},
 		"keyed list": func() hx.INode {
 			items := hx.Signal([]int{3, 1, 2})
 			return hx.Ul().Body(hx.EachKeyed(items, func(i int) int { return i },

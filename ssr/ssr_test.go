@@ -229,3 +229,20 @@ func TestAClassWithASpaceIsIgnored(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 }
+
+func TestDynamicRendersWhatItHoldsNow(t *testing.T) {
+	items := hx.Signal([]string{"a", "b"})
+	empty := hx.Signal(false)
+	got := Render(func() hx.INode {
+		return hx.Div().Body(
+			hx.Dynamic(func() hx.INode {
+				return hx.Each(items, func(i int, v string) hx.INode { return hx.Li().Textf("%d:%s", i, v) })
+			}),
+			hx.Dynamic(func() hx.INode {
+				return hx.IfFn(empty, func() hx.INode { return hx.P().Text("nothing") })
+			}))
+	})
+	if got != `<div><li>0:a</li><li>1:b</li></div>` {
+		t.Fatalf("got %s", got)
+	}
+}

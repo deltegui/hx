@@ -19,7 +19,14 @@ The browser needs signals to follow who reads them. A server does not, since it 
 
 ## Dependency tracking
 
-There is one global "current effect". While an effect runs, every `Signal.Get` registers that effect as a subscriber of the signal. `Set` runs the subscribers synchronously. Before an effect re-runs, it unsubscribes from everything and its child effects are disposed, so dependencies are always the ones from the last run.
+There is one global "current effect". While an effect runs, every `Signal.Get` registers that effect as a subscriber of the signal, and remembers the *version* the signal had. Before an effect re-runs, it unsubscribes from everything and its child effects are disposed, so dependencies are always the ones from the last run.
+
+A change goes in two phases:
+
+1. **Mark.** `Set` raises the version of the signal and marks what depends on it. A computed value is only marked "may be out of date", and the mark goes on to whoever reads it. An effect that is marked waits in a queue.
+2. **Run.** When the queue is flushed (at the end of the `Set`, or of the `Batch`, handler or effect that is open), each effect asks its sources if their version changed. A computed value that is out of date is calculated first, so one that ends up the same does not wake the effect. Only then does the effect run, once, with every value current.
+
+Because nothing runs until everything is marked, an effect never sees half of a change, and because a computed value is calculated when it is read, it is never stale. An effect created inside another one goes after its owner in the queue: if the owner runs again it disposes the child, which then never runs for nothing.
 
 Effects belong to an owner (a parent effect, a root or a node) so they can be stopped. See [Reactivity](reactivity.md#who-stops-an-effect-ownership).
 
@@ -38,7 +45,7 @@ This is why `GetAttribute`, `HaveClass`... answer about the state *after the nex
    - nodes that were removed have their element removed and are deactivated,
    - then each marked node applies its pending text, value, attributes, classes, styles and listeners.
 
-So ten `Set` calls in a row can run your effects ten times, but they cost one DOM update.
+So ten `Set` calls in a row outside a batch can run your effects ten times, but they cost one DOM update. Inside an event handler they run once (see [Batching](reactivity.md#batching-several-changes-at-once)).
 
 ## Children
 
@@ -58,7 +65,7 @@ Text is stored in its own text node, placed before the children. Changing it onl
 
 ## Events
 
-Each node has at most one DOM listener per event type. `On` stores the handler and the listener is registered the first time the node renders. Calling `On` again swaps the handler. When a node leaves the tree its listeners are removed (and the Go function that backs them is released). If it comes back, they are registered again.
+Each node has at most one DOM listener per event type, with two slots: the binding to a signal (`BindOnInput`, `BindOnChange`, `BindOnChecked`) and the handler of the user (`On` and its shortcuts). The listener is registered the first time the node renders, and when it fires it runs the binding first and then the handler. Calling `On` again swaps the handler and keeps the binding. When a node leaves the tree its listeners are removed (and the Go function that backs them is released). If it comes back, they are registered again.
 
 ## Speed notes
 
@@ -74,7 +81,7 @@ Custom renderers are possible: implement `Renderer` (`ScheduleRender` and `Mark`
 
 ## Requests
 
-`hxhttp.Do` uses `XMLHttpRequest`, not `fetch`, because it is the only one that tells you how much of a body has been uploaded. It blocks the goroutine that calls it, and the answer is delivered from the browser through a channel, which is why it cannot be waited for inside an event handler. `Action` wraps it: it runs the function on a goroutine, keeps the state in signals, and cancels the previous run when you start a new one.
+`hxhttp.Do` uses `XMLHttpRequest`, not `fetch`, because it is the only one that tells you how much of a body has been uploaded. It blocks the goroutine that calls it, and the answer is delivered from the browser through a channel, which is why it cannot be waited for inside an event handler: the page cannot deliver the answer until the handler returns, and Go would stop with a deadlock. The engine marks the handlers and frames it runs (`hx.RunCallback`), and `Do` returns `ErrInCallback` if it is called inside one. `Action` wraps it: it runs the function on a goroutine, keeps the state in signals, and cancels the previous run when you start a new one.
 
 `hx` and `hxhttp` do not import `encoding/json` or `net/url`: Go keeps every package a program imports even if it is never used, and `encoding/json` alone adds more than 800 KB to a TinyGo WASM file (measured). JSON lives in `hxjson`, on top of `hxhttp`.
 

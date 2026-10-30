@@ -17,14 +17,16 @@ A node from one engine was given to the other, for example a tree built while `h
 
 ## "Cannot call Get if there is no effect"
 
-The browser engine logs this when you call `signal.Get()` while building the tree, outside any effect. The value is read once and will never update:
+The browser engine logs this (with the file and line) when you call `signal.Get()` while building the tree, outside any effect. The value is read once and will never update:
 
 ```go
 hx.P().Text(fmt.Sprint(count.Get()))   // read once: it will not change
 hx.P().BindText(label)                  // follows the signal
 ```
 
-Inside an event handler it is fine and does not warn. The server engine does not track signals, so it never warns.
+Inside an event handler it is fine and does not warn. The server engine does not track signals, so it never warns (there, reading once is exactly what a render does).
+
+To make it impossible to miss, build with `-tags hxstrict`: the warning becomes a `panic` with the same file and line. If reading it once is what you want, say so with `hx.UntrackGet(sig)`.
 
 ## The UI does not update after I change a slice or a map
 
@@ -70,9 +72,15 @@ A `Noop` has no element of its own, so there is nothing to style. Put a real ele
 
 Use `wasm.Underlying(node)` after the node has been rendered. Before that it is `nil`.
 
-## The page freezes when I make a request
+## `hxhttp: Do waits for the answer and cannot do that inside an event handler`
 
-You waited for the answer inside an event handler. The answer can only be handled after the handler returns, so waiting there blocks it forever. Run the request in a goroutine (`go func() { ... }()`) or inside an `hx.Action`, which does it for you. See [Forms and requests](forms-and-requests.md).
+You called `hxhttp.Do` (or `hxjson.Get`, `Send`...) straight from an event handler. A request needs the page to deliver its answer, and the page cannot do that until the handler returns, so waiting there would stop the program with `fatal error: all goroutines are asleep - deadlock!`. Hix returns this error (`hxhttp.ErrInCallback`) before it gets that far. Run the request in a goroutine (`go func() { ... }()`) or inside an `hx.Action`, which does it for you. See [Forms and requests](forms-and-requests.md).
+
+The same goes for any callback you make yourself with `js.FuncOf`: Hix cannot see those. Wrap their body in `hx.RunCallback(func() { ... })` and `Do` will report it too.
+
+## `fatal error: all goroutines are asleep - deadlock!` in the console, and nothing responds
+
+Something waited, inside a callback of JavaScript, for something only JavaScript can deliver. The usual cause is a request made from a handler or a `js.FuncOf` callback that Hix could not see; see the entry above. Once Go prints this the program has exited, and the page has to be reloaded.
 
 ## `hxhttp: requests can only be made in the browser`
 
@@ -98,7 +106,7 @@ A form with files needs `enctype="multipart/form-data"`. `hxhttp.FormOf` sends i
 
 - **The DOM half is WASM only.** `wasm.New`, `wasm.NewFromId`, `wasm.Hydrate`, `wasm.EventOf`, `wasm.Underlying` and the DOM renderer need `GOOS=js GOARCH=wasm`. The core (`hx`), the server engine (`hx/ssr`) and the types of `hxhttp` build everywhere, so a server can render the UI. See [Server rendering](server-rendering.md).
 - **`Each` rebuilds its rows.** Use `EachKeyed` when rows have state or the list is long.
-- **No batching of signal writes.** Each `Set` runs its effects right away. DOM updates are still batched once per frame.
+- **Signal writes outside a handler are not grouped by themselves.** Each `Set` runs its effects when it returns. Event handlers and the end of an `Action` are in a batch already; elsewhere (a timer, a goroutine) use `hx.Batch`. DOM updates are batched once per frame in any case.
 - **`Computed` needs a comparable type.** For slices, maps or structs holding them, use a signal and update it from an effect.
 - **No router, no global store, no component lifecycle hooks.** Components are plain functions, and `node.Effect` + `OnCleanup` cover setup and teardown.
 - **Only a few element constructors.** Use `El("tag")` for the rest. SVG shapes other than `Svg` and `Path` need their own namespace and do not have constructors yet.

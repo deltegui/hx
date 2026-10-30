@@ -22,3 +22,5 @@ func (element *VNode) reviveListeners() {}
 func targetValue(ctx EventContext) string { return "" }
 
 func targetChecked(ctx EventContext) bool { return false }
+
+func (element *VNode) queueRendered() {}

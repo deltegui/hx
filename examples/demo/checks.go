@@ -543,6 +543,71 @@ func allChecks() []check {
 			return eq("value", sb.el.QuerySelector("textarea").Underlying().Get("value").String(), "bye")
 		}},
 
+		{"select BindValue picks its option when it is created, and when the options change", func(sb *sandbox) error {
+			s := hx.Signal("b")
+			opts := hx.Signal([]string{"a", "b", "c"})
+			sel := hx.Select().BindValue(s)
+			sel.Effect(func() {
+				nodes := []hx.INode{}
+				for _, o := range opts.Get() {
+					nodes = append(nodes, hx.Option().Value(o).Text(o))
+				}
+				sel.BodyList(nodes)
+			})
+			sb.root.Body(sel)
+			settle()
+			el := sb.el.QuerySelector("select").Underlying()
+			if err := eq("value at creation", el.Get("value").String(), "b"); err != nil {
+				return err
+			}
+			s.Set("c")
+			settle()
+			if err := eq("value after the signal changed", el.Get("value").String(), "c"); err != nil {
+				return err
+			}
+			opts.Set([]string{"z", "c", "y"})
+			settle()
+			return eq("value after the options changed", el.Get("value").String(), "c")
+		}},
+
+		{"OnRendered runs once the element is in the document", func(sb *sandbox) error {
+			calls, connected := 0, false
+			canvas := hx.Canvas()
+			canvas.OnRendered(func() {
+				calls++
+				connected = canvas.Underlying() != nil && canvas.Underlying().Underlying().Get("isConnected").Bool()
+			})
+			sb.root.Body(hx.Div().Body(canvas))
+			if err := eq("calls before the render", calls, 0); err != nil {
+				return err
+			}
+			settle()
+			canvas.Attribute("width", "10")
+			settle()
+			return firstError(eq("calls", calls, 1), eq("connected", connected, true))
+		}},
+
+		{"OnRemoved runs when the node leaves, OnRendered again when it comes back", func(sb *sandbox) error {
+			rendered, removed := 0, 0
+			child := hx.Span().Text("kid")
+			child.OnRendered(func() { rendered++ }).OnRemoved(func() { removed++ })
+			parent := hx.Div()
+			sb.root.Body(parent)
+			parent.Body(child)
+			settle()
+			if err := firstError(eq("rendered", rendered, 1), eq("removed", removed, 0)); err != nil {
+				return err
+			}
+			parent.Body()
+			settle()
+			if err := firstError(eq("rendered", rendered, 1), eq("removed", removed, 1)); err != nil {
+				return err
+			}
+			parent.Body(child)
+			settle()
+			return firstError(eq("rendered", rendered, 2), eq("removed", removed, 1))
+		}},
+
 		{"BindValue resets an input whose DOM value drifted", func(sb *sandbox) error {
 			s := hx.Signal("")
 			in := hx.Input().BindValue(s)

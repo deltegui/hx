@@ -16,11 +16,11 @@ Tabs:
 | DOM details | Classes, attributes, styles, replacing handlers, SVG |
 | Forms | Inputs, textarea, select, checkbox, keyboard events |
 | Stress | 100 to 5000 rows with a signal and a binding each, and a keyed list with reverse and rotate, with timings |
-| Checks | 30 checks that run against the real DOM |
+| Checks | 33 checks that run against the real DOM |
 
 ## Checks
 
-Open the **Checks** tab and press *Run checks*. Opening `http://localhost:8080/#checks-auto` runs them when the page loads and writes the result in `document.body.dataset.checks` (for example `30/30 checks passed`), which makes it possible to run them from a headless browser with the Chrome DevTools Protocol.
+Open the **Checks** tab and press *Run checks*. Opening `http://localhost:8080/#checks-auto` runs them when the page loads and writes the result in `document.body.dataset.checks` (for example `30/33 checks passed`), which makes it possible to run them from a headless browser with the Chrome DevTools Protocol.
 
 ## Files
 

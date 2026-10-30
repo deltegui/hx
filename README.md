@@ -27,7 +27,7 @@ Hix doesn’t try to be a full-fledged framework — it’s just a library for w
 
 If you need a full framework to build PWAs or complex applications, try go-app.
 
-**[Live demo](https://deltegui.github.io/hx/)** — the code is in [`examples/demo`](examples/demo): a tab per feature and 30 checks that run against the real DOM, in your browser (about 277K of WASM over the network, built with TinyGo).
+**[Live demo](https://deltegui.github.io/hx/)** — the code is in [`examples/demo`](examples/demo): a tab per feature and 33 checks that run against the real DOM, in your browser (about 277K of WASM over the network, built with TinyGo).
 
 ## A taste
 
@@ -126,7 +126,7 @@ Thanks to TinyGo and Hix simplicity, the example shown above ("A taste") can ach
 | Optimized TinyGo + GZip   | `gzip -k -9 main.wasm`                                                    | 155K |
 | Optimized TinyGo + brotli | `brotli -f -q 11 main.wasm`                                               | 113K |
 
-Measured with Go 1.27.3 and TinyGo 0.43.0. For a bigger program, the [live demo](https://deltegui.github.io/hx/) ([`examples/demo`](examples/demo), every feature, 30 checks) is 6.4M with Go and 1.0M with optimized TinyGo (277K gzip, 194K brotli). Both builds pass the 30 checks in Chromium.
+Measured with Go 1.27.3 and TinyGo 0.43.0. For a bigger program, the [live demo](https://deltegui.github.io/hx/) ([`examples/demo`](examples/demo), every feature, 33 checks) is 6.4M with Go and 1.0M with optimized TinyGo (277K gzip, 194K brotli). Both builds pass the 33 checks in Chromium.
 
 ## Status
 
@@ -139,7 +139,7 @@ go test ./...                                                              # the
 GOOS=js GOARCH=wasm go test -exec "$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./...   # also in WASM (needs Node.js)
 ```
 
-The DOM code is checked in a real browser: [`examples/demo`](examples/demo) has 30 checks, [`examples/ssr`](examples/ssr) (`make check`) checks the hydration, and [`examples/forms`](examples/forms) (`make check`) checks the forms with JavaScript off and on.
+The DOM code is checked in a real browser: [`examples/demo`](examples/demo) has 33 checks, [`examples/ssr`](examples/ssr) (`make check`) checks the hydration, and [`examples/forms`](examples/forms) (`make check`) checks the forms with JavaScript off and on.
 
 ## Why Hix?
 

@@ -189,3 +189,18 @@ A `Noop` ignores things that need an element (`Class`, `Style`, `Attribute`, `On
 ## Reaching the DOM element
 
 After a node has been rendered, `node.Underlying()` returns its `dom.Element`. Inputs, textareas, selects, options, links, buttons, forms, images, labels, canvases, videos and audios give you the specific `honnef` type (for example `*dom.HTMLInputElement`). Other elements give a `*dom.BasicHTMLElement`.
+
+The node is not rendered when you create it: the renderer runs on the next animation frame. To use the element as soon as it exists, for example to hand a `<canvas>` to a chart library, ask for it with `OnRendered`:
+
+```go
+canvas := hx.Canvas()
+var chart js.Value
+canvas.OnRendered(func() {
+	// the canvas is in the document here
+	chart = js.Global().Get("Chart").New(canvas.Underlying().Underlying(), config)
+}).OnRemoved(func() {
+	chart.Call("destroy") // the node left the tree
+})
+```
+
+`OnRendered` runs after the renderer has finished the whole frame, so the rest of the page is there too. It runs again if the node is removed and later put back, and `OnRemoved` is its pair. Neither runs while rendering on a server. If the UI is only disposed with its root (the nodes are not removed), use `OnCleanup`. With `Hydrate`, `OnRendered` runs once the page has been adopted.

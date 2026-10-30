@@ -98,6 +98,10 @@ type VNode struct {
 	bindings    []*binding
 	deactivated bool
 
+	onRendered []func()
+	onRemoved  []func()
+	attached   bool // OnRendered has run and OnRemoved has not
+
 	father *VNode
 	status changeStatus
 
@@ -181,6 +185,7 @@ func (element *VNode) Effect(fn func()) INode {
 // its bindings. It applies to the descendants too.
 func (element *VNode) deactivate() {
 	element.deactivated = true
+	element.fireRemoved()
 	element.releaseListeners()
 	for _, b := range element.bindings {
 		if b.effect != nil {
@@ -205,6 +210,7 @@ func (element *VNode) reactivate() {
 		return
 	}
 	element.deactivated = false
+	element.queueRendered()
 	element.reviveListeners()
 	for _, b := range element.bindings {
 		if b.effect == nil || b.effect.disposed {
@@ -215,6 +221,39 @@ func (element *VNode) reactivate() {
 		if child != nil {
 			child.reactivate()
 		}
+	}
+}
+
+// OnRendered runs fn when the node is in the page and has been rendered, so
+// Underlying() returns its DOM element and the element is in the document. It
+// runs after the renderer has finished the frame, so the rest of the page is
+// rendered too. Use it to hand the element to something that needs it, such as
+// a chart library.
+//
+// It runs the first time, and again each time the node is put back after being
+// removed (see OnRemoved). It never runs while rendering on a server.
+func (element *VNode) OnRendered(fn func()) *VNode {
+	element.onRendered = append(element.onRendered, fn)
+	element.queueRendered()
+	return element
+}
+
+// OnRemoved runs fn when a node that OnRendered has run for leaves the tree: a
+// parent replaced its children, or If, Show or a list dropped it. Use it to
+// undo what OnRendered did. It does not run when the node is only disposed
+// with its root; use OnCleanup for that.
+func (element *VNode) OnRemoved(fn func()) *VNode {
+	element.onRemoved = append(element.onRemoved, fn)
+	return element
+}
+
+func (element *VNode) fireRemoved() {
+	if !element.attached {
+		return
+	}
+	element.attached = false
+	for _, fn := range element.onRemoved {
+		Untrack(fn)
 	}
 }
 

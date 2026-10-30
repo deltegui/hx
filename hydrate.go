@@ -52,6 +52,7 @@ func HydrateElement(mount dom.Element, build func() INode) (dispose func()) {
 		h := &hydrator{renderer: root.renderer.(*DiffRenderer)}
 		rebuilt := h.adoptChildren(root)
 		h.finish(root, rebuilt)
+		h.renderer.flushRendered()
 
 		js.Global().Set("__hxHydrationMismatches", h.mismatches)
 

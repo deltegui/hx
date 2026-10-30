@@ -71,3 +71,16 @@ func targetValue(ctx EventContext) string {
 func targetChecked(ctx EventContext) bool {
 	return ctx.Event.Target().Underlying().Get("checked").Truthy()
 }
+
+// queueRendered asks the renderer to run the OnRendered functions of the node
+// once the frame is done. Asking twice does no harm: it runs once per time the
+// node is in the page.
+func (element *VNode) queueRendered() {
+	if len(element.onRendered) == 0 || element.attached || !element.haveDomElement {
+		return
+	}
+	if renderer, ok := element.renderer.(*DiffRenderer); ok {
+		renderer.rendered = append(renderer.rendered, element)
+		renderer.ScheduleRender()
+	}
+}

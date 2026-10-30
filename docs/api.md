@@ -105,6 +105,8 @@ Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSub
 
 | | |
 |---|---|
+| `OnRendered(fn func())` | Runs `fn` when the node is in the page and rendered, so `Underlying()` works. Again each time the node is put back. Never on a server. |
+| `OnRemoved(fn func())` | Runs `fn` when a node that `OnRendered` ran for leaves the tree. |
 | `Underlying() dom.Element` | The DOM element, after the first render. |
 | `AsVNode() *VNode` | The node itself. |
 

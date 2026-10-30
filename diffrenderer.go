@@ -15,6 +15,8 @@ type DiffRenderer struct {
 	mountpoint  dom.Element
 	markNodes   map[*VNode]struct{}
 	toPlace     map[*VNode]struct{} // DOM owners whose children must be put in order
+	selects     []*VNode            // selects that get their value when the rest of the render is done
+	rendered    []*VNode            // nodes whose OnRendered runs when the frame is done
 	scheduled   bool
 	rafCallback js.Func
 }
@@ -60,6 +62,32 @@ func (renderer *DiffRenderer) render() {
 	for node := range renderer.markNodes {
 		node.render()
 		delete(renderer.markNodes, node)
+	}
+	// A select takes its value once its options have theirs, and the order the
+	// nodes are rendered in does not guarantee that.
+	selects := renderer.selects
+	renderer.selects = nil
+	for _, node := range selects {
+		if node.haveDomElement {
+			node.updateValue()
+		}
+	}
+	renderer.flushRendered()
+}
+
+// flushRendered runs the OnRendered functions of the nodes that were rendered
+// and are still in the page.
+func (renderer *DiffRenderer) flushRendered() {
+	queue := renderer.rendered
+	renderer.rendered = nil
+	for _, node := range queue {
+		if node.attached || node.deactivated || !node.haveDomElement {
+			continue
+		}
+		node.attached = true
+		for _, fn := range node.onRendered {
+			Untrack(fn)
+		}
 	}
 }
 
@@ -316,7 +344,9 @@ func (element *VNode) render() {
 	if element.text.status != unchanged {
 		element.updateText()
 	}
-	if element.value.status != unchanged {
+	if element.tag == "SELECT" {
+		element.deferSelectValue()
+	} else if element.value.status != unchanged {
 		element.updateValue()
 	}
 	if element.checked.status != unchanged {
@@ -343,6 +373,7 @@ func (element *VNode) render() {
 	}
 
 	element.clearDirty()
+	element.queueRendered()
 }
 
 func (element *VNode) updateId() {
@@ -472,6 +503,20 @@ func (element *VNode) updateText() {
 		element.textNode.Set("nodeValue", text)
 	}
 	element.text.tick()
+}
+
+// deferSelectValue leaves the value of a select for the end of the render. It is
+// written again when the options change, because the old value may now match.
+func (element *VNode) deferSelectValue() {
+	changed := element.value.status != unchanged
+	if !changed && (!element.isDirty(flagChildren) || element.value.Value() == "") {
+		return
+	}
+	if renderer, ok := element.renderer.(*DiffRenderer); ok {
+		renderer.selects = append(renderer.selects, element)
+	} else {
+		element.updateValue()
+	}
 }
 
 func (element *VNode) updateChecked() {

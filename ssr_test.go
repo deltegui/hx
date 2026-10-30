@@ -133,3 +133,16 @@ func TestSvgRendersWithItsOwnCase(t *testing.T) {
 		t.Fatalf("got %s", got)
 	}
 }
+
+func TestRenderedHooksDoNotRunOnTheServer(t *testing.T) {
+	calls := 0
+	html := RenderToString(func() INode {
+		return Div().Body(Span().Text("x").OnRendered(func() { calls++ }).OnRemoved(func() { calls++ }))
+	})
+	if html != "<div><span>x</span></div>" {
+		t.Fatalf("html: %s", html)
+	}
+	if calls != 0 {
+		t.Fatalf("the hooks ran %d times on the server", calls)
+	}
+}

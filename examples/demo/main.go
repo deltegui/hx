@@ -78,9 +78,18 @@ func main() {
 		})
 
 		root.Body(
-			hx.Header().Body(
-				hx.H1().Text("Hix demo"),
-				hx.P().Text("Signals, effects, roots, node-owned bindings, lists, DOM details, forms and in-browser checks."),
+			hx.Header().Class("hero").Body(
+				hx.Img().Src("logo.svg").Attribute("alt", "Hix logo").Class("logo"),
+				hx.Div().Body(
+					hx.H1().Text("Hix"),
+					hx.P().Text("A small, reactive frontend library for Go (WASM). It aims to be small, simple, and predictable."),
+					hx.P().Class("links").Body(
+						hx.A().Href("https://github.com/deltegui/hx").Text("GitHub"),
+						hx.Span().Text(" · "),
+						hx.A().Href("https://github.com/deltegui/hx/tree/main/examples/demo").Text("Source of this demo"),
+					),
+					hx.P().Class("note").Text("Signals, effects, roots, node-owned bindings, lists, DOM details, forms and in-browser checks."),
+				),
 			),
 			nav,
 			content,

@@ -92,9 +92,9 @@ TinyGo has its own `wasm_exec.js`. Do not mix it with the one from Go.
 
 | Compiler | Size |
 |---|---|
-| Go | ~5 MB |
-| TinyGo | ~1.5 MB |
-| TinyGo, optimized | ~630 KB (about 190 KB gzip) |
+| Go | ~4.5 MB |
+| TinyGo | ~1.7 MB |
+| TinyGo, optimized | ~555 KB (about 155 KB gzip) |
 
 ## Where to go next
 

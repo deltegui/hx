@@ -5,7 +5,7 @@
 Hix is a reactive frontend library for Go (WASM).
 It aims to be **small, simple, and predictable**.
 
-In about 1.9K lines of code, it can:
+In about 2.5K lines of code, it can:
 
 * Write HTML in plain old Go. No code generation needed. No strange mixed files without editor support.
 
@@ -26,6 +26,8 @@ Hix only depends on *honnef.co/go/js/dom/v2*.
 Hix doesn’t try to be a full-fledged framework — it’s just a library for writing reactive web interfaces in Go.
 
 If you need a full framework to build PWAs or complex applications, try go-app.
+
+**[Live demo](https://deltegui.github.io/hx/)** — the code is in [`examples/demo`](examples/demo): a tab per feature and 30 checks that run against the real DOM, in your browser (about 277K of WASM over the network, built with TinyGo).
 
 ## A taste
 
@@ -110,23 +112,21 @@ hx.EffectFunc(func() {
 | [API reference](docs/api.md) | Every exported function and method. |
 | [Troubleshooting and limits](docs/troubleshooting.md) | Common mistakes and what Hix does not do. |
 
-Recipes in the documentation are complete and runnable. [`examples/demo`](examples/demo) is a larger example with a tab per feature and a page of checks that run against the real DOM. [`examples/ssr`](examples/ssr) renders a page on a Go server and hydrates it in the browser. [`examples/forms`](examples/forms) is a form with file uploads that works with and without JavaScript, and [`examples/form-minimal`](examples/form-minimal) is the smallest version of it, to see what the mechanism needs.
+Recipes in the documentation are complete and runnable. [`examples/demo`](examples/demo) is the [live demo](https://deltegui.github.io/hx/): a larger example with a tab per feature and a page of checks that run against the real DOM. [`examples/ssr`](examples/ssr) renders a page on a Go server and hydrates it in the browser. [`examples/forms`](examples/forms) is a form with file uploads that works with and without JavaScript, and [`examples/form-minimal`](examples/form-minimal) is the smallest version of it, to see what the mechanism needs.
 
 ## Sizes
 
-Example with code using TinyGo (just 631K of WASM, 191K gzip): [Hix example](https://deltegui.github.io/hx/).
-
-Thanks to TinyGo and Hix simplicity, the example shown above can achieve these sizes:
+Thanks to TinyGo and Hix simplicity, the example shown above ("A taste") can achieve these sizes:
 
 | Compiled                  | Command                                                                   | Size |
 |---------------------------|---------------------------------------------------------------------------|------|
-| Go full                   | `GOOS=js GOARCH=wasm go build -o main.wasm main.go`                       | 5.1M |
-| TinyGo                    | `GOOS=js GOARCH=wasm tinygo build -o main.wasm main.go `                  | 1.5M |
-| Optimized TinyGo          | `GOOS=js GOARCH=wasm tinygo build --no-debug -opt=z -o main.wasm main.go` | 631K |
-| Optimized TinyGo + GZip   | `gzip -k -9 main.wasm`                                                    | 191K |
-| Optimized TinyGo + brotli | `brotli -f -q 11 main.wasm`                                               | 138K |
+| Go full                   | `GOOS=js GOARCH=wasm go build -o main.wasm main.go`                       | 4.5M |
+| TinyGo                    | `GOOS=js GOARCH=wasm tinygo build -o main.wasm main.go `                  | 1.7M |
+| Optimized TinyGo          | `GOOS=js GOARCH=wasm tinygo build --no-debug -opt=z -o main.wasm main.go` | 555K |
+| Optimized TinyGo + GZip   | `gzip -k -9 main.wasm`                                                    | 155K |
+| Optimized TinyGo + brotli | `brotli -f -q 11 main.wasm`                                               | 113K |
 
-These numbers were measured on an earlier version of the library.
+Measured with Go 1.27.3 and TinyGo 0.43.0. For a bigger program, the [live demo](https://deltegui.github.io/hx/) ([`examples/demo`](examples/demo), every feature, 30 checks) is 6.4M with Go and 1.0M with optimized TinyGo (277K gzip, 194K brotli). Both builds pass the 30 checks in Chromium.
 
 ## Status
 

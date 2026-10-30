@@ -9,7 +9,10 @@
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, sans-serif; }
 #app { max-width: 62rem; margin: 0 auto; padding: 1rem; }
 header h1 { margin: .2rem 0; }
-header p { margin: 0 0 .8rem; color: var(--muted); }
+header p { margin: 0 0 .4rem; color: var(--muted); }
+.hero { display: flex; gap: 1rem; align-items: center; margin-bottom: .8rem; }
+.hero .logo { width: 5.5rem; height: 5.5rem; flex: none; }
+.hero .links a { color: var(--accent); }
 .tabs { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: 1rem; }
 .tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .content { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1rem; }

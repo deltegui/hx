@@ -57,6 +57,12 @@ func EachKeyed[T any, K comparable](
 		return row
 	}
 
+	// reconcile makes the rows match the current items of src. It runs as an
+	// effect, so it is called again every time src changes. A row whose key is
+	// still in the list is reused (its item and index signals are updated and its
+	// node is kept), a new key builds a row, and a key that is gone disposes its
+	// row. Then the nodes are handed to list in the new order and the renderer
+	// does the moves. Rows with a repeated key are rebuilt on every call.
 	reconcile := func() {
 		items := src.Get()
 		for _, row := range duplicates {

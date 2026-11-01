@@ -24,6 +24,11 @@ import (
 // part is rendered again in the browser. Functions registered with OnMount run
 // when the page has been hydrated.
 //
+// If the page has hx.ReplayScript, the clicks, keys, text typed and changes
+// that the user made inside the element before this point are replayed once it
+// is hydrated: each handler runs with the event, in order, as if the page had
+// been alive.
+//
 // Hydrate creates a root for the UI. The returned function stops everything
 // that the UI started.
 func Hydrate(id string, build func() hx.INode) (dispose func()) {
@@ -42,13 +47,16 @@ func HydrateElement(mount js.Value, build func() hx.INode) (dispose func()) {
 	mountQueue = nil
 	defer func() { currentMountMode = previousMode }()
 
+	// What the user did while the WASM was loading (see hx.ReplayScript).
+	events := takeReplay(mount)
+
 	hx.CreateRoot(func(rootDispose func()) struct{} {
 		dispose = rootDispose
 
 		root := New(mount)
 		root.Body(build())
 
-		h := &hydrator{renderer: root.renderer.(*DiffRenderer)}
+		h := &hydrator{renderer: root.renderer.(*DiffRenderer), replaying: len(events) > 0}
 		rebuilt := h.adoptChildren(root)
 		h.finish(root, rebuilt)
 		h.renderer.flushRendered()
@@ -61,6 +69,7 @@ func HydrateElement(mount js.Value, build func() hx.INode) (dispose func()) {
 		for _, fn := range queue {
 			fn()
 		}
+		h.replay(events)
 		return struct{}{}
 	})
 	return dispose
@@ -79,6 +88,9 @@ func ReadState(id string) string {
 type hydrator struct {
 	renderer   *DiffRenderer
 	mismatches int
+
+	replaying bool     // there are events to replay
+	listening []*VNode // the adopted nodes with listeners, found again by replay
 }
 
 func (h *hydrator) warn(node *VNode, reason string) {
@@ -254,6 +266,7 @@ func (h *hydrator) adoptNode(node *VNode, raw js.Value) bool {
 	node.domElement = raw
 	node.haveDomElement = true
 	node.status = unchanged
+	h.listen(node, raw)
 	if differences := node.commit(raw); len(differences) > 0 {
 		h.fixed(node, differences)
 	}

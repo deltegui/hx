@@ -93,6 +93,49 @@ async function run(variant) {
   return { result, logs };
 }
 
+// The user acts while the WASM is still loading (the server holds it for a
+// second and a half). Nothing of it may be lost once the page is hydrated.
+async function runEarly() {
+  const page = await openPage(`${BASE}/?slow=1&r=${Math.random()}`);
+  for (let i = 0; i < 50 && !(await page.evaluate(`!!document.getElementById("inc") && !!window.__hxq`)); i++) await sleep(50);
+  const before = await page.evaluate(`(async () => {
+    const $ = (s) => document.querySelector(s);
+    const out = { status: $("#status").textContent, queue: window.__hxq.length };
+    $("#inc").click(); $("#inc").click();
+    $("#draft").value = "w"; $("#draft").dispatchEvent(new Event("input", { bubbles: true }));
+    $("#draft").value = "written early"; $("#draft").dispatchEvent(new Event("input", { bubbles: true }));
+    $("#color").value = "blue"; $("#color").dispatchEvent(new Event("change", { bubbles: true }));
+    $("#notes").value = "typed before"; $("#notes").dispatchEvent(new Event("input", { bubbles: true }));
+    $("#list li .remove").click();
+    out.queued = window.__hxq.length;
+    out.countBefore = $("#count").textContent;
+    return out;
+  })()`);
+  for (let i = 0; i < 100 && !(await page.evaluate(POLL)); i++) await sleep(200);
+  await sleep(300);
+  const after = await page.evaluate(`(async () => {
+    const $ = (s) => document.querySelector(s);
+    const w = (ms = 150) => new Promise((r) => setTimeout(r, ms));
+    const out = {
+      count: $("#count").textContent, picked: $("#picked").textContent,
+      draft: $("#draft").value, notes: $("#notes").value,
+      items: [...document.querySelectorAll("#list li span")].map((s) => s.textContent.trim()),
+      queueAfter: window.__hxq ? window.__hxq.length : -1,
+    };
+    // the signal has the text too, not only the field: adding uses it
+    $("#add").click(); await w();
+    out.itemsAfterAdd = [...document.querySelectorAll("#list li span")].map((s) => s.textContent.trim());
+    out.draftAfterAdd = $("#draft").value;
+    // a click after hydration is handled once, not also replayed
+    $("#inc").click(); await w();
+    out.countLater = $("#count").textContent;
+    return out;
+  })()`);
+  const logs = page.logs.filter((l) => l.includes("hx:") || l.includes("EXCEPTION"));
+  page.close();
+  return { before, after, logs };
+}
+
 let failures = 0;
 const check = (name, ok, detail = "") => {
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}${ok ? "" : "   " + detail}`);
@@ -122,6 +165,19 @@ check("removing works", same(r.afterRemove, ["1. ship it", "2. learn hydration"]
 check("select works", r.picked === "color: blue", r.picked);
 check("a conditional that was empty on the server appears", r.emptyMessage === "Nothing to do", r.emptyMessage);
 check("no errors in the console", normal.logs.length === 0, normal.logs.join("\n"));
+
+console.log("--- events before the WASM loads");
+const early = await runEarly();
+check("the page was not hydrated yet", early.before.status === "server rendered" && early.before.countBefore === "count: 3", JSON.stringify(early.before));
+check("the events were recorded (input collapsed)", early.before.queued === 6, JSON.stringify(early.before));
+check("the clicks are replayed", early.after.count === "count: 5", early.after.count);
+check("the removal is replayed", same(early.after.items, ["1. ship it"]), JSON.stringify(early.after.items));
+check("the select change is replayed", early.after.picked === "color: blue", early.after.picked);
+check("the text typed is kept in the field", early.after.draft === "written early" && early.after.notes === "typed before", `${early.after.draft} | ${early.after.notes}`);
+check("the signal got the text typed (adding uses it)", same(early.after.itemsAfterAdd, ["1. ship it", "2. written early"]) && early.after.draftAfterAdd === "", JSON.stringify(early.after.itemsAfterAdd));
+check("the queue is empty afterwards", early.after.queueAfter === 0, early.after.queueAfter);
+check("a click after hydration counts once", early.after.countLater === "count: 6", early.after.countLater);
+check("no errors in the console", early.logs.length === 0, early.logs.join("\n"));
 
 const expectedHtml = r.html;
 const broken = {

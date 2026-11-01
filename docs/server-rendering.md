@@ -123,6 +123,25 @@ You can use any other way to get the same data to both sides (a fetch, query par
 
 A `Resource` or a list that loads its data in the browser would start empty, and the first load would change what the server wrote. Give it the server's data instead, with `hx.ResourceWith` or, when it depends on a signal such as a filter or a page, `hx.ResourceForWith`: it starts from that value, does not load when the page opens, and loads again only when the source changes.
 
+## Events before hydration
+
+Between the moment the HTML shows and the moment the WASM has hydrated it, the page looks alive but has no listeners: a click does nothing and text typed into a field never reaches its signal (and hydrating may then write the old value over it). Put `hx.ReplayScript()` in the head to fix it:
+
+```go
+fmt.Fprintf(w, `<head><meta charset="utf-8">%s</head>...`, hx.ReplayScript())
+```
+
+It is a small inline script (about 500 bytes, no state, it works alone) that listens on the document for `click`, `input`, `change` and `keydown` and keeps the events. `wasm.Hydrate` takes the ones that happened inside its element and, once the page is hydrated (and the `OnMount` functions have run), fires the handlers in order, as if the page had been alive:
+
+- the event goes up from its target through the elements that have handlers, and stops if a handler calls `StopPropagation`;
+- an `input` or `change` is replayed once per element, with the value the field has now, so the signal catches up with what was typed (`BindOnInput`, `BindOnChange`, `BindOnChecked` work);
+- a click or a key older than 10 seconds is dropped, and so is an event whose element was rendered again because of a mismatch;
+- up to 200 events are kept, the oldest are dropped.
+
+What it cannot do is undo the past: `PreventDefault` on a replayed event is too late. A link followed or a form sent before hydration was done by the browser, which is what happens without WASM anyway (see [`examples/forms`](../examples/forms)). The script is inline, so a Content-Security-Policy needs a nonce or the hash of its content.
+
+With several islands, each `Hydrate` replays its own events and the rest wait for theirs. Recording goes on until you call `wasm.StopReplay()`: call it when the last island is hydrated (or never, if you do not mind the page keeping a short list of events that nobody uses).
+
 ## Islands: hydrate a part of the page
 
 A page does not have to be one app. A server-rendered page (a menu, text, a footer) can have several **islands**: elements that the server fills and the browser brings to life, each one with its own state. The rest is plain HTML, and a page with no islands needs no WASM at all.

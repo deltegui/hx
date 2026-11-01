@@ -4,7 +4,7 @@ A Go server renders a page with Hix and sends plain HTML. The browser loads the 
 
 ```sh
 make serve      # builds the WASM and starts the server on http://localhost:8090
-make check      # 47 hydration checks in headless Chromium (Node 22+ and chromium)
+make check      # 57 checks in headless Chromium (Node 22+ and chromium)
 ```
 
 Look at the page with `curl localhost:8090` to see the HTML the server writes.
@@ -24,6 +24,7 @@ Look at the page with `curl localhost:8090` to see the HTML the server writes.
 - Hydrating the page the server rendered makes **no mismatches**, creates and removes **no nodes**, and sets **no attributes**. The only change to the DOM is the text that `OnMount` writes.
 - The elements the server wrote are the ones in use afterwards.
 - The page works: counter, add and remove with a keyed list, an input bound to a signal, a select, and a conditional that was empty on the server.
+- **Nothing is lost while the WASM loads** (`/?slow=1` holds the WASM for 1.5 s, and `hx.ReplayScript()` is in the head): clicks, text typed, a select and a removal made before hydration are replayed, the signals get the text, and a click afterwards counts once.
 - The page recovers when its HTML is broken on purpose (`/?break=class`, `attr`, `id`, `text`, `tag`, `count`, `empty`): the mismatch is reported in the console, the DOM ends up identical to the normal one, and the page still works.
 
 Try a broken page by hand: <http://localhost:8090/?break=count> and look at the browser console.

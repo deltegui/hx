@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/deltegui/hx"
 	"github.com/deltegui/hx/ssr"
@@ -25,14 +26,22 @@ new MutationObserver(function (records) {
 }).observe(document.getElementById("app"), {childList: true, subtree: true, attributes: true, characterData: true});
 </script>`
 
-const loader = `<script src="/static/wasm_exec.js"></script>
+// slow=1 loads the WASM from a route that waits first, so there is time to use
+// the page before it is hydrated.
+func loader(slow bool) string {
+	path := "/static/main.wasm"
+	if slow {
+		path = "/slow/main.wasm"
+	}
+	return `<script src="/static/wasm_exec.js"></script>
 <script>
 const go = new Go();
-WebAssembly.instantiateStreaming(fetch("/static/main.wasm"), go.importObject)
+WebAssembly.instantiateStreaming(fetch("` + path + `"), go.importObject)
   .then((result) => go.run(result.instance));
 </script>`
+}
 
-func page(state app.State, tamper func(string) string) string {
+func page(state app.State, tamper func(string) string, slow bool) string {
 	body := ssr.Render(func() hx.INode { return app.App(state) })
 	if tamper != nil {
 		body = tamper(body)
@@ -42,12 +51,13 @@ func page(state app.State, tamper func(string) string) string {
 <html lang="en">
 <head><meta charset="utf-8"><title>Hix server rendering</title>
 <style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}li{margin:.2rem 0}</style>
+` + hx.ReplayScript() + `
 </head>
 <body>
 <div id="app">` + body + `</div>
 ` + hx.StateScript("hx-state", string(data)) + `
 ` + observer + `
-` + loader + `
+` + loader(slow) + `
 </body></html>`
 }
 
@@ -74,6 +84,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	mux.HandleFunc("/slow/main.wasm", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(1500 * time.Millisecond)
+		http.ServeFile(w, r, "static/main.wasm")
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -84,7 +98,7 @@ func main() {
 			state.Todos = nil
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(page(state, tampers[r.URL.Query().Get("break")])))
+		w.Write([]byte(page(state, tampers[r.URL.Query().Get("break")], r.URL.Query().Get("slow") == "1")))
 	})
 
 	log.Printf("listening on http://localhost%s", *addr)

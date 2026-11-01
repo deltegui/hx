@@ -160,11 +160,13 @@ Event names: `EventClick EventInput EventChange EventKeyUp EventKeyDown EventSub
 |---|---|
 | `ssr.Render(build func() INode) string` | The HTML of the UI. Runs effects once. Safe to call from many goroutines at the same time. Builds everywhere. |
 | `StateScript(id, json string) string` | A `<script type="application/json">` carrying `json`, escaped. Builds everywhere. |
+| `ReplayScript() string` | A `<script>` for the head that records clicks, keys, typing and changes until the page is hydrated; `wasm.Hydrate` replays them. Builds everywhere. |
 | `OnMount(fn func())` | Runs `fn` only in the browser, after hydration. Ignored on the server. |
 | `IsServer() bool` | `true` on the server, `false` in the browser. |
 | `wasm.Hydrate(id string, build func() INode) (dispose func())` | Adopts the server's HTML in the element with that id. Browser only. |
 | `wasm.HydrateElement(mount js.Value, build) (dispose func())` | Same for an element you have. Browser only. |
 | `wasm.ReadState(id string) string` | The text of the element with that id (what `StateScript` wrote). Browser only. |
+| `wasm.StopReplay()` | Stops recording the events of `ReplayScript`. Call it after the last island is hydrated. Browser only. |
 
 ## Requests
 

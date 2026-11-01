@@ -104,7 +104,7 @@ One API, two engines. You write the UI against `hx`, and each program imports th
 
 | Package | For | What it is |
 |---|---|---|
-| `hx` | everywhere | Signals, effects, the `INode` interface and the constructors (`Div`, `Span`...), `If`/`Each`/`EachKeyed`, `Action`, `Resource`. |
+| `hx` | everywhere | Signals, effects, the `INode` interface and a constructor for every HTML5 and SVG element (`Div`, `Fieldset`, `Circle`...), `If`/`Each`/`EachKeyed`, `Action`, `Resource`. |
 | `hx/wasm` | the browser | The engine that keeps the tree and updates the DOM (`wasm.NewFromId`, `wasm.Hydrate`). |
 | `hx/ssr` | a server | The engine that writes HTML (`ssr.Render`). No DOM code, no tracking of signals, so renders run in parallel. |
 | `hx/hxhttp` | the browser | Requests: `hxhttp.Do` (XMLHttpRequest) with bodies for forms and files, progress, cancel and timeout. The types build everywhere. |

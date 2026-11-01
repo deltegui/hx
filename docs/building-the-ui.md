@@ -36,18 +36,26 @@ Mounting belongs to the browser engine (`hx/wasm`). On a server there is nothing
 
 ## Elements
 
-There are constructors for the common ones:
+Every non-obsolete HTML5 element has a constructor, named after its tag (`Div`, `Fieldset`, `Details`, `Dialog`, `Figure`, `Dl`, `Progress`, `Time`...). A few examples:
 
-`Div Span P A Button I Strong Em Small Code Pre Br Hr Img Label Form Input TextArea Select Option H1..H6 Ul Ol Li Table THead TBody TFoot Tr Th Td Nav Header Footer Main Section Article Aside Video Audio Source Canvas Svg Path`
+`Div Span P A Button Input TextArea Select Option Label Form Fieldset Legend Datalist Table Caption Col Details Summary Dialog Figure Figcaption Nav Header Main Footer H1..H6 Ul Ol Li Dl Dt Dd Img Picture Video Audio Source Canvas Iframe Progress Meter Mark Kbd Time Abbr B U Sub Sup Blockquote Code Pre Br Hr`
 
-For any other tag use `El`:
+For a tag with no constructor (a custom element such as `my-widget`, or one of the few HTML5 tags still missing), use `El`:
 
 ```go
-hx.El("details").Body(
-	hx.El("summary").Text("More"),
-	hx.P().Text("Hidden text"),
+hx.El("my-widget").Attribute("mode", "compact").Body(
+	hx.Fieldset().Body(
+		hx.Legend().Text("Plan"),
+		hx.Input().Type("radio"),
+	),
 )
 ```
+
+Obsolete tags (`font`, `center`, `marquee`...) have no constructor.
+
+### The document elements
+
+`Html`, `Head`, `Body`, `Title`, `Meta`, `Link`, `Script`, `Style` and `Noscript` exist so that a server can write a whole page with `ssr.Render`. In the browser the page already has its `<html>`, `<head>` and `<body>`, so they only make sense on the server and when hydrating (`Hydrate` adopts what the server wrote). A `Script` made as a node runs in the browser; one written inside `Raw` does not.
 
 ## Content
 
@@ -164,15 +172,17 @@ To send a form to a server, with or without files, see [Forms and requests](form
 
 ## SVG
 
-`Svg()` and `Path()` are created in the SVG namespace, so they render correctly:
+Every SVG element has a constructor and is created in the SVG namespace, so it renders correctly: `Svg`, `Path`, `Circle`, `Rect`, `Line`, `Polyline`, `Polygon`, `Ellipse`, `G`, `Defs`, `Use`, `Symbol`, `Text`, `Tspan`, `TextPath`, `Image`, `LinearGradient`, `RadialGradient`, `Stop`, `Pattern`, `Mask`, `ClipPath`, `Marker`, `Filter`, the `Fe...` filter primitives, `Animate`, `Set`...
 
 ```go
 hx.Svg().Attribute("viewBox", "0 0 100 100").Body(
+	hx.Defs().Body(hx.LinearGradient().Id("g").Body(hx.Stop().Attribute("offset", "0"))),
+	hx.Circle().Attribute("cx", "50").Attribute("cy", "50").Attribute("r", "40").Attribute("fill", "url(#g)"),
 	hx.Path().Attribute("d", "M10 10 L90 10 L50 90 Z").Attribute("fill", "tomato"),
 )
 ```
 
-For other SVG shapes there is no constructor yet, and `El` creates HTML-namespace elements.
+Four SVG tags have the same name as an HTML one, so they carry a prefix: `SvgA`, `SvgTitle`, `SvgStyle` and `SvgScript`. Tags written in camelCase (`LinearGradient`, `ClipPath`) come out in lowercase in the HTML the server writes; the browser's parser puts the case back, and hydration compares without case. `El` always creates HTML-namespace elements, so it is not for SVG.
 
 ## Fragments with `Noop`
 
